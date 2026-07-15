@@ -6,7 +6,7 @@ this repo: the SPA is standalone (SPEC.md sec 4 "Repo layout" -- backend + front
 together, in their own repo), so it does not import autoharn's `filing/` package at all. The
 autoharn `deployment.json` shape becomes ONE of three config sources this module recognizes
 (the third, used only when this repo runs as autoharn's own submodule, e.g. under
-`tools/panel/`) -- never the only source, and never imported as code from the autoharn tree
+`tools/autoharn-panel/`) -- never the only source, and never imported as code from the autoharn tree
 (this module re-parses that JSON shape itself, so a checkout of this repo alone, with no
 autoharn checkout beside it, still has two working config sources).
 
@@ -22,7 +22,7 @@ Precedence (spec sec 1, "environment-first, file-fallback", documented here exac
      supply, never silently overriding an env value that IS set.
   4. The autoharn `deployment.json` shape (`LEDGER_DEPLOYMENT` env, else
      `<repo_root>/deployment.json`, else `<repo_root>/../deployment.json` -- the second lets
-     this module find autoharn's own record when this repo sits at `tools/panel/` inside an
+     this module find autoharn's own record when this repo sits at `tools/autoharn-panel/` inside an
      autoharn checkout) -- used ONLY if steps 1-3 resolved nothing at all for the connection
      facts. Supplies `db`/`host`/`schema`/`kern`/`role` together, as one unit (this module does
      not mix-and-match a `deployment.json`'s `host` with an env `PGDATABASE`, say -- a caller
@@ -155,7 +155,7 @@ def _load_autoharn_deployment_json(repo_root: Path) -> dict[str, str] | None:
     if env_path:
         candidates.append(Path(env_path))
     candidates.append(repo_root / "deployment.json")
-    candidates.append(repo_root.parent / "deployment.json")  # tools/panel/ inside an autoharn checkout
+    candidates.append(repo_root.parent / "deployment.json")  # tools/autoharn-panel/ inside an autoharn checkout
     path = next((p for p in candidates if p.is_file()), None)
     if path is None:
         return None

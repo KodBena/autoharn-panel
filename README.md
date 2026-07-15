@@ -34,7 +34,7 @@ exits nonzero — never a silent default to any host):
 A fourth, autoharn-specific source: if neither `LEDGER_PG_URI` nor any discrete `PG*` field is
 set at all, `config.py` looks for an autoharn `deployment.json` (`LEDGER_DEPLOYMENT` env, else
 `<repo_root>/deployment.json`, else `<repo_root>/../deployment.json` — the latter finds an
-autoharn checkout's own record when this repo is nested under it, e.g. at `tools/panel/`) and
+autoharn checkout's own record when this repo is nested under it, e.g. at `tools/autoharn-panel/`) and
 reads its `db`/`host`/`schema`/`kern`/`role` as one unit. This repo does **not** import any code
 from an autoharn checkout to do this — it re-parses that JSON shape itself, so a bare checkout of
 this repo (no autoharn beside it) still has two fully working config sources (URI, discrete).
