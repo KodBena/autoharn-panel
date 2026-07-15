@@ -1,0 +1,32 @@
+{
+  "makespan": 4,
+  "optimal": true,
+  "jobs": [
+    {
+      "id": "msched-provision",
+      "start": 0,
+      "end": 2
+    },
+    {
+      "id": "msched-declare-resource",
+      "start": 2,
+      "end": 3
+    },
+    {
+      "id": "msched-witness-schedule",
+      "start": 3,
+      "end": 4
+    }
+  ],
+  "batches": [
+    [
+      "msched-provision"
+    ],
+    [
+      "msched-declare-resource"
+    ],
+    [
+      "msched-witness-schedule"
+    ]
+  ]
+}

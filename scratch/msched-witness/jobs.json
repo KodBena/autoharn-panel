@@ -1,0 +1,8 @@
+{
+  "jobs": [
+    {"id": "msched-provision", "resources": ["experience.ledger", "venv:generic", "checkout:makespan-scheduler"], "duration": 2},
+    {"id": "msched-declare-resource", "resources": ["experience.ledger", "checkout:makespan-scheduler", "CLAUDE.md"], "duration": 1},
+    {"id": "msched-witness-schedule", "resources": ["experience.ledger", "checkout:makespan-scheduler"], "duration": 1}
+  ],
+  "max_parallel": 1
+}
