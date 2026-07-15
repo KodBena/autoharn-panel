@@ -62,3 +62,15 @@ export interface LedgerChangeEvent {
   type: 'ledger-change'
   watermark: Watermark
 }
+
+// GET/POST/DELETE /api/profiles (backend/core/routes.py + backend/core/profiles_write.py).
+// GET is always mounted (read-only view); POST/DELETE are only mounted when the backend is
+// writable (`not cfg.read_only`) -- see Health.read_only.
+export interface Profile {
+  name: string
+  host: string
+  db: string
+  schema: string
+  kern: string
+  role: string | null
+}

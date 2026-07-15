@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from config import PanelConfig, load_config
 from core import ledger_read as core_ledger_read
-from core.routes import router as core_router
+from core.routes import build_profiles_write_router, router as core_router
 
 # Every extension this repo SHIPS is imported unconditionally, top-of-file, like every other
 # import (lazy/function-body imports are banned on principle: a module's importers should pay
@@ -116,6 +116,10 @@ def create_app() -> FastAPI:
     exception is the extension MOUNT itself, decided once, at import/startup time, below."""
     app = FastAPI(title="ledger-panel (standalone)", lifespan=lifespan)
     app.include_router(core_router)
+    # Mounted unconditionally at the router level (GET /api/profiles is always a read-only
+    # view), and then the mutating profiles routes are gated the same way autoharn's write
+    # router is below -- decided once, at process start, on the same `cfg` this factory already
+    # resolves for the autoharn mount decision, not `cfg.read_only` re-evaluated per request.
 
     # Extension mount decision: read once, at process start, from the same config resolution
     # the lifespan will use (load_config is cheap and side-effect-free besides its own fail-loud
@@ -145,6 +149,9 @@ def create_app() -> FastAPI:
         app.include_router(autoharn_routes.router)
         if not cfg.read_only:
             app.include_router(autoharn_routes.build_write_router())
+
+    if not cfg.read_only:
+        app.include_router(build_profiles_write_router())
 
     # Static-file mount for frontend/dist (Vite's build output), MOUNTED LAST so every /api/*
     # route above already holds precedence (a mount only ever catches a request no earlier route
