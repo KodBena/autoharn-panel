@@ -3,3 +3,13 @@ __pycache__/
 .venv/
 *.egg-info/
 .pytest_cache/
+
+# >>> autoharn scaffold-owned churn (bootstrap/new-project.sh) >>>
+# Written by bootstrap/new-project.sh (2026-07-15T15:38:38Z), tracker item
+# scaffold-log-churn-in-subject-repo: these paths are scaffolding/hook RUNTIME OUTPUT
+# (invocation logs, change-gate state), not audited subject-repo content, and churn on
+# every session action -- tracking them git-side is a false-positive generator for any
+# diff/mutation-purity check run against this repo (ent-observatory cycle-001, NEW
+# lesson 1). Append-if-missing; safe to re-run.
+.claude/logs/
+# <<< autoharn scaffold-owned churn <<<

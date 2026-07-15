@@ -13,6 +13,6 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': { target: proxyTarget, changeOrigin: true },
-    },
+    },host:'0.0.0.0',
   },
 })
