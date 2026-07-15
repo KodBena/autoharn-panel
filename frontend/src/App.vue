@@ -47,7 +47,7 @@ onMounted(loadHealth)
     </div>
     <div class="health-strip">
       <span v-if="healthState.health">
-        {{ healthState.health.schema }}@{{ healthState.health.kern_schema }}
+        {{ healthState.health.schema }}@{{ healthState.health.kern_schema }}<template v-if="healthState.health.active_profile"> (profile: {{ healthState.health.active_profile }})</template>
       </span>
       <span v-if="healthState.error" class="error-banner">{{ healthState.error }}</span>
       <span>

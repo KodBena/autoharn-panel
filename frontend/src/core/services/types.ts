@@ -51,6 +51,8 @@ export interface Health {
   kern_schema: string
   read_only: boolean
   extensions_enabled: string[]
+  active_profile?: string | null
+  available_profiles?: string[]
   autoharn?: AutoharnHealth
   maintainer_principal?: string
 }

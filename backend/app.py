@@ -132,6 +132,8 @@ def create_app() -> FastAPI:
             "kern_schema": cfg.kern_schema,
             "read_only": cfg.read_only,
             "extensions_enabled": list(cfg.extensions),
+            "active_profile": cfg.active_profile,
+            "available_profiles": list(cfg.available_profiles),
         }
         if cfg.extension_enabled("autoharn"):
             health["autoharn"] = autoharn_health(cfg)
