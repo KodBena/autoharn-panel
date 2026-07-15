@@ -199,6 +199,7 @@ button.primary:hover { filter: brightness(1.08); }
 .badge-COSIGNED { background: var(--ok-bg); color: var(--ok-text); }
 .badge-AMBIGUOUS { background: var(--danger); color: #fff; }
 .badge-SUPERSEDED { background: var(--open-bg); color: var(--text-dim); border: 1px dashed var(--border); }
+.badge-locked { background: var(--danger); color: #fff; }
 
 .witness-list {
   margin-top: 0.5rem;

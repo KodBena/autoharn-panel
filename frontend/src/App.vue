@@ -43,7 +43,11 @@ onMounted(loadHealth)
   <header class="top">
     <div class="title-block">
       <h1>Ledger panel</h1>
-      <span v-if="healthState.health?.read_only" class="badge badge-OPEN">read-only</span>
+      <span
+        v-if="healthState.health?.read_only"
+        class="badge"
+        :class="healthState.health?.read_only_reason === 'locked' ? 'badge-locked' : 'badge-OPEN'"
+      >{{ healthState.health?.read_only_reason === 'locked' ? 'read-only (locked)' : 'read-only' }}</span>
     </div>
     <div class="health-strip">
       <span v-if="healthState.health">
