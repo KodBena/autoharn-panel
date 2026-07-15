@@ -115,8 +115,8 @@ loop the SPA exists to serve.
 - **Accessibility floor** (P1): color coding always paired with a shape/label channel
   (red/green alone fails the obvious reader); focus order follows visual order.
 - **Performance budget** (P0): first meaningful paint < 1s on localhost, interaction
-  < 100ms, lists virtualized above 200 rows. The omega frontend-speed reap sheet's
-  "don't do these" list is a normative appendix to this section once delivered.
+  < 100ms, lists virtualized above 200 rows. `docs/omega-observatory/2026-07-15-frontend-speed-reap.md`'s
+  "Don't do these" list is a normative appendix to this section.
 
 ## 4. Architecture constraints for the standalone repo
 
@@ -124,9 +124,10 @@ loop the SPA exists to serve.
   exactly** from the PoC's `styles.css` — extract its palette to design tokens first, then
   restyle nothing.
 - **OpenAPI-typed client**: the backend already speaks OpenAPI via FastAPI; generate the
-  TS types (omega reap #1) so the vocabulary classes stay single-homed at compile time
-  too. The generated client is build output, never hand-edited, regenerated in CI against
-  the backend's live `openapi.json`.
+  TS types (`docs/omega-observatory/2026-07-15-structural-reap.md` entry #1) so the
+  vocabulary classes stay single-homed at compile time too. The generated client is
+  build output, never hand-edited, regenerated in CI against the backend's live
+  `openapi.json`.
 - **Extension boundary** (concern 5): the core knows Postgres-ledger-generic concepts
   (rows, kinds, refs, supersession). Everything autoharn-semantic — obligation trees,
   independence grades, `led` grammar, kernel vocabularies — lives in an `extensions/autoharn`
