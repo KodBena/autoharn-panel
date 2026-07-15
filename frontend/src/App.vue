@@ -10,6 +10,7 @@ import { computed, onMounted, ref } from 'vue'
 import { healthState, loadHealth } from './core/state/health'
 import { useLiveUpdates } from './core/composables/useLiveUpdates'
 import LedgerTab from './core/components/LedgerTab.vue'
+import ProfilesPanel from './core/components/ProfilesPanel.vue'
 import WorkItemsTab from './extensions/autoharn/components/WorkItemsTab.vue'
 import ReviewGapTab from './extensions/autoharn/components/ReviewGapTab.vue'
 import QuestionsTab from './extensions/autoharn/components/QuestionsTab.vue'
@@ -17,14 +18,19 @@ import CommissionTab from './extensions/autoharn/components/CommissionTab.vue'
 
 const { status } = useLiveUpdates()
 
-type TabId = 'ledger' | 'work' | 'review-gap' | 'questions' | 'commission'
+type TabId = 'ledger' | 'profiles' | 'work' | 'review-gap' | 'questions' | 'commission'
 const activeTab = ref<TabId>('ledger')
 
 const autoharnEnabled = computed(
   () => healthState.health?.extensions_enabled?.includes('autoharn') ?? false,
 )
 
-const coreTabs: { id: TabId; label: string }[] = [{ id: 'ledger', label: 'Recent ledger' }]
+// 'Profiles' is core (row:141's commission: profile configuration from within the SPA is not
+// autoharn-specific), so it is always in coreTabs, unlike the four autoharn-gated tabs below.
+const coreTabs: { id: TabId; label: string }[] = [
+  { id: 'ledger', label: 'Recent ledger' },
+  { id: 'profiles', label: 'Profiles' },
+]
 const autoharnTabs: { id: TabId; label: string }[] = [
   { id: 'commission', label: 'Commission decomposition' },
   { id: 'work', label: 'Work items' },
@@ -74,6 +80,7 @@ onMounted(loadHealth)
   </nav>
 
   <LedgerTab v-if="activeTab === 'ledger'" />
+  <ProfilesPanel v-if="activeTab === 'profiles'" />
   <template v-if="autoharnEnabled">
     <CommissionTab v-if="activeTab === 'commission'" />
     <WorkItemsTab v-if="activeTab === 'work'" />
