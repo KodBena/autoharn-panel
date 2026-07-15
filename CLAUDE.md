@@ -151,13 +151,7 @@ never enter this repository's public history; autoharn is its one home.
   is deliberately not enumerated — recognizing one is your job, including the kind no one
   has named yet.
 
-{"Project LAW, extrapolate from and interpret judiciously like a professional colleague": [
-    "law/adr/0000-the-alpha-and-the-omega-type-driven-design.md",
-    "law/adr/0011-mechanization-discipline.md",
-    "law/adr/0012-compositional-and-structural-hygiene.md",
-    "law/adr/0013-execution-integrity.md",
-    "law/adr/0014-executor-second-opinion.md",
-    "law/adr/0017-the-zero-context-reader.md"]}
+{"Project LAW, extrapolate from and interpret judiciously like a professional colleague": ["law/adr/*.md]}
 
 Additional binding inputs for THIS project's frontend work (already in-repo, not snapshots):
 `docs/omega-observatory/2026-07-15-frontend-speed-reap.md` (the Don't-list) and
