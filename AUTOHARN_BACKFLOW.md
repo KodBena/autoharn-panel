@@ -311,6 +311,79 @@ RE-ARM" (lines 147–165); implementation in `_breaker_transition()` (lines
 
 ---
 
+## Finding 6 — flipping `doc_attestation` to `observe`, exactly as its own note instructs, floods the debt count with vendor dependency files ADR-0017 never intended to cover
+
+**What happened.** `.claude/apparatus.json`'s `mechanisms.doc_attestation` ships `mode:
+"off"` with a note that reads, verbatim: "Flip to 'observe' once you're actually
+running the loop ... so `./distance-to-clean` surfaces its debt alongside
+review-gap/question-status/work-violations." Following that instruction literally —
+flipping `mode` to `observe` and running `./distance-to-clean` — produced `TOTAL debt:
+155`, immediately after the flip, with **no other change to the repo**. Running
+`./attest-doc check` directly confirms the same 155: `attest-doc check: 1 ATTESTED, 0
+STALE, 155 NO-ATTESTATION`. Of those 155, 118 are files under `frontend/node_modules/**`
+or `venv/lib/python3.13/site-packages/**` — e.g. `frontend/node_modules/vite/README.md`,
+`frontend/node_modules/typescript/SECURITY.md`,
+`venv/lib/python3.13/site-packages/pip/_vendor/idna/LICENSE.md` — confirmed both
+gitignored (`git check-ignore -v` resolves both to their respective `.gitignore` rules,
+`frontend/.gitignore:10:node_modules` and `venv/.gitignore:2:*`). This is not the scope
+ADR-0017 itself names: `law/adr/0017-the-zero-context-reader.md`'s own Scope section
+(line 37) reads "Every **maintainer-facing document** authored or edited from
+ratification onward — READMEs, design notes, rulings, briefs, capability and operating
+documents, BACKLOG entries, ADRs themselves" — a vendored dependency's own upstream
+README or LICENSE is authored and edited by neither this deployment nor its maintainer,
+and was never plausibly meant to fall under a fresh-context legibility audit obligation
+scoped to *this project's own* documentation. The disposition: I (the orchestrator, this
+session) reverted the flip back to `off` immediately upon seeing the 155-item flood,
+rather than leave a misleading debt count live in the deployment's own apparatus state.
+
+**Why it is surprising.** The switch's own note frames flipping it as the intended,
+expected next step once a maintainer starts running the A:B:C loop — not as something
+that needs a scope patch first. A maintainer who does exactly what the note tells them to
+do gets, on the very first `distance-to-clean` run afterward, a debt count dominated
+15-to-1 by files they will never plausibly attest (an npm package's own upstream
+CHANGELOG, a pip-vendored license file), rather than debt for their own project prose.
+
+**Concrete evidence — root cause, confirmed by reading both scope-detection paths.**
+`autoharn/gates/link_integrity.py`'s `tracked_md()` (line 98–102) restricts its entire
+scan to `git ls-files '*.md'` — git-TRACKED files only — so a gitignored vendor tree
+never enters its scope at all; `doc_attestation_presence.py`'s *own* commit-time gate
+path does the identical restriction, via its own `_tracked_md()` (lines 296–299), same
+`git ls-files '*.md'` call. **But that is not the function this deployment's tooling
+actually calls.** `doc_attestation_presence.py` additionally exports `discover_md()`
+(lines 436–462), whose own docstring states the design choice explicitly: "a plain
+on-disk walk, unconditionally, never `git ls-files`" — and names why, calling out a
+prior version that preferred `git ls-files` and got caught, in an out-of-frame
+hack-rationalization audit, silently returning `[]` on a git-initialized-but-nothing-
+committed tree (a false-CLEAN). The fix chosen was to make `discover_md()` walk raw
+disk unconditionally instead — sound for its stated worry (an uncommitted-but-real new
+`.md` file should not be invisible), but it does not consult `.gitignore` at all, so a
+`node_modules/` or `site-packages/` tree — always present on disk, never git-tracked,
+and enormous — is swept in on equal footing with the maintainer's own docs. Both
+`bootstrap/templates/attest-doc.tmpl`'s `cmd_check()` (line 145: `targets =
+dap.discover_md(PROJECT_ROOT)`) and `bootstrap/templates/distance-to-clean.tmpl`'s
+DOC-ATTESTATION section (line 160: the identical call) call `discover_md()` — the raw-
+filesystem walker — not `_tracked_md()`, the git-restricted one already proven correct
+and already used by this same module's own commit-time gate and by
+`link_integrity.py`'s sibling gate. The asymmetry is real and file:line-confirmed, not a
+naming collision: the one scope-detector in this module that already solves this
+problem correctly (`_tracked_md()`) is simply not the one wired into the two
+deployment-facing entry points that produce the debt count a maintainer actually reads.
+
+**Severity if cargo-culted at NRC/NIST-grade stakes.** Same silent-false-confidence shape
+this file's framing exists to name, but inverted: this is not a false-clean, it is a
+false-*alarm* flood, and the framing above holds that failure mode is just as dangerous
+as false-clean. A maintainer who flips this switch expecting to see debt for their own
+work instead gets a governance dashboard whose headline number is 87% dependency noise —
+a strong, rational incentive to conclude the mechanism is broken and either (a) stop
+trusting the debt count on sight going forward ("it's always full of npm garbage, ignore
+the number"), which is crying wolf against exactly the discipline `distance-to-clean`
+exists to make legible, or (b) leave `doc_attestation` permanently `off`, which defeats
+the entire point of ADR-0017's fresh-context audit loop having a commit-time-blockable,
+zero-cost enforcement floor at all. Both outcomes are the opposite of what flipping the
+switch, as instructed, was meant to produce.
+
+---
+
 ## Verification note
 
 Every file path and line reference above was checked against the actual
