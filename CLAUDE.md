@@ -127,6 +127,22 @@ what's declared, not the declaration itself — if the two ever disagree, the le
 
 (ledger row id=38, `--refs row:16`; upstream repo: `KodBena/makespan-scheduler`)
 
+## ADR-0005 instance bindings (autoharn-panel) — the non-portable section
+
+`law/adr/0005-documentation-discipline.md`'s own Rule 2 requires a declared, per-deployment
+filing-homes table; its own "Instance bindings" section is autoharn's own declaration for
+*autoharn's own repo* and, per that section's own text, "an adopting project replaces it
+wholesale with its own." This is that replacement for autoharn-panel — kept here, not in the
+gitignored `law/` snapshot, since this table needs to survive in this repo's own history.
+
+- **Consult / decision records** — an independent review or audit commissioned and treated as
+  evidence — live under [`docs/consults/`](docs/consults/), one markdown file per consult,
+  named for what it assessed. First entry: `docs/consults/2026-07-16-spa-professionalism-audit.md`
+  (ledger row 189).
+
+A record kind this table does not yet cover gets a new bullet here when it recurs (ADR-0011
+Rule 2), not a fabricated new top-level directory guessed under time pressure.
+
 ## The LAW (portable ADRs — snapshot copy, lifted 2026-07-15)
 
 The ADRs under `law/adr/` govern how you build here, exactly as they do in autoharn itself.
@@ -151,7 +167,7 @@ never enter this repository's public history; autoharn is its one home.
   is deliberately not enumerated — recognizing one is your job, including the kind no one
   has named yet.
 
-{"Project LAW, extrapolate from and interpret judiciously like a professional colleague": ["law/adr/*.md]}
+{"Project LAW, extrapolate from and interpret judiciously like a professional colleague": ["law/adr/*.md"]}
 
 Additional binding inputs for THIS project's frontend work (already in-repo, not snapshots):
 `docs/omega-observatory/2026-07-15-frontend-speed-reap.md` (the Don't-list) and
