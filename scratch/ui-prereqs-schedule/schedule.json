@@ -1,0 +1,38 @@
+{
+  "makespan": 5,
+  "optimal": true,
+  "jobs": [
+    {
+      "id": "panel-profile-storage",
+      "start": 0,
+      "end": 3
+    },
+    {
+      "id": "panel-profile-health-surface",
+      "start": 0,
+      "end": 2
+    },
+    {
+      "id": "panel-readonly-lock",
+      "start": 3,
+      "end": 5
+    },
+    {
+      "id": "panel-readonly-lock-indicator",
+      "start": 2,
+      "end": 3
+    }
+  ],
+  "batches": [
+    [
+      "panel-profile-storage",
+      "panel-profile-health-surface"
+    ],
+    [
+      "panel-readonly-lock-indicator"
+    ],
+    [
+      "panel-readonly-lock"
+    ]
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "jobs": [
+    {"id": "panel-profile-storage",         "resources": ["backend/config.py"],                                            "duration": 3},
+    {"id": "panel-profile-health-surface",  "resources": ["backend/app.py:api_health", "frontend/types.ts", "frontend/App.vue:badge"], "duration": 2},
+    {"id": "panel-readonly-lock",           "resources": ["backend/config.py", "backend/app.py:api_health"],                "duration": 2},
+    {"id": "panel-readonly-lock-indicator", "resources": ["frontend/types.ts", "frontend/App.vue:badge"],                   "duration": 1}
+  ],
+  "max_parallel": 2
+}
