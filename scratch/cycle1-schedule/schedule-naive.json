@@ -1,0 +1,60 @@
+{
+  "makespan": 10,
+  "optimal": true,
+  "jobs": [
+    {
+      "id": "fix-commission-decomposition-view",
+      "start": 4,
+      "end": 6
+    },
+    {
+      "id": "recent-ledger-navigability",
+      "start": 0,
+      "end": 3
+    },
+    {
+      "id": "vocabulary-resolution-glossary",
+      "start": 8,
+      "end": 10
+    },
+    {
+      "id": "build-item-view",
+      "start": 0,
+      "end": 4
+    },
+    {
+      "id": "convert-citations-to-links",
+      "start": 3,
+      "end": 6
+    },
+    {
+      "id": "live-update-affordance",
+      "start": 6,
+      "end": 8
+    },
+    {
+      "id": "spa-minor-polish",
+      "start": 4,
+      "end": 5
+    }
+  ],
+  "batches": [
+    [
+      "recent-ledger-navigability",
+      "build-item-view"
+    ],
+    [
+      "convert-citations-to-links"
+    ],
+    [
+      "fix-commission-decomposition-view",
+      "spa-minor-polish"
+    ],
+    [
+      "live-update-affordance"
+    ],
+    [
+      "vocabulary-resolution-glossary"
+    ]
+  ]
+}

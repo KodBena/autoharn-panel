@@ -1,0 +1,12 @@
+{
+  "jobs": [
+    {"id": "fix-commission-decomposition-view", "resources": ["backend/extensions/autoharn/ledger_read.py"], "duration": 2},
+    {"id": "recent-ledger-navigability",         "resources": ["frontend/LedgerTab.vue", "frontend/DataTable.vue"], "duration": 3},
+    {"id": "vocabulary-resolution-glossary",     "resources": ["frontend/LedgerTab.vue"], "duration": 2},
+    {"id": "build-item-view",                    "resources": ["backend/extensions/autoharn/ledger_read.py", "backend/core/routes.py", "frontend/App.vue"], "duration": 4},
+    {"id": "convert-citations-to-links",         "resources": ["frontend/LedgerTab.vue", "frontend/WorkItemsTab.vue", "frontend/ReviewGapTab.vue", "frontend/QuestionsTab.vue", "frontend/CommissionTab.vue"], "duration": 3},
+    {"id": "live-update-affordance",             "resources": ["frontend/LedgerTab.vue", "frontend/useLiveUpdates.ts"], "duration": 2},
+    {"id": "spa-minor-polish",                   "resources": ["frontend/App.vue"], "duration": 1}
+  ],
+  "max_parallel": 3
+}
