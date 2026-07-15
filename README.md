@@ -27,6 +27,7 @@ exits nonzero — never a silent default to any host):
 | Kernel/principal schema | `LEDGER_KERNEL_SCHEMA` | required |
 | Subject role | `LEDGER_ROLE` | optional — omit for a bare/self-owned schema (no `SET ROLE`) |
 | Write conduit | `LED_BIN` | absent ⇒ **read-only mode**, surfaced in `/api/health` and the UI header |
+| Read-only lock | `PANEL_READONLY` | truthy ⇒ forces read-only regardless of `LED_BIN`, refuses to mount any write route |
 | Bind host/port | `PANEL_BIND` / `PANEL_PORT` | default `127.0.0.1:8420` — loopback by default, `0.0.0.0` is a choice, not a default |
 | SSE poll cadence | `PANEL_POLL_INTERVAL` | default 2s |
 | Extensions | `PANEL_EXTENSIONS` | comma-separated; default `autoharn` |
@@ -40,6 +41,19 @@ source below. There is no toml-level "default profile" — a profile only activa
 missing a required field), startup refuses with the exact missing/wrong piece named, never a
 silent fall-through. When a profile resolves the connection, `config_source` reads e.g.
 `connection=profile:experience`.
+
+**The read-only lock** (§1's `PANEL_READONLY`) is a startup-only safety override, resolved once
+at the same time as everything else in this section — there is no runtime or HTTP way to flip
+it, by design, matching the operator/startup-config model this whole file describes. It is
+independent of `LED_BIN`: a deployment can have a working write conduit configured and still be
+forced read-only (e.g. for agentic exploration that must not risk an accidental write until an
+operator deliberately unlocks it by restarting with the env var unset). `GET /api/health`'s
+`read_only_reason` field distinguishes *why* a deployment is read-only — `"locked"` (this
+override is set) vs `"no-write-conduit"` (`LED_BIN` simply isn't configured) vs `null`
+(genuinely writable) — and the UI header badge reads `read-only (locked)` in the first case,
+plain `read-only` in the second, so an operator can tell "can't write" apart from "won't write
+on purpose" at a glance. A locked deployment's write route is not mounted at all (the same gate
+`LED_BIN`'s absence already uses), not merely hidden client-side.
 
 A fourth, autoharn-specific source: if neither `LEDGER_PG_URI` nor any discrete `PG*` field is
 set at all, `config.py` looks for an autoharn `deployment.json` (`LEDGER_DEPLOYMENT` env, else
