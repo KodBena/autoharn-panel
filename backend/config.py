@@ -20,6 +20,13 @@ Precedence (spec sec 1, "environment-first, file-fallback", documented here exac
      `schema`, `kernel_schema`, `role`, `led_bin`, `bind`, `port`, `poll_interval`,
      `extensions`) -- read only for whichever of the above three keys env did not already
      supply, never silently overriding an env value that IS set.
+  3b. `PANEL_PROFILE` -- names a `[profiles.<name>]` table in panel.toml (host/db/schema/kern,
+      optional role). Sits at the SAME priority tier as step 3's own `[ledger]` table: tried
+      after `[ledger]`'s own pg_uri/pghost/pgdatabase (those still win outright if set) but
+      before step 4's deployment.json. There is no toml-level "default profile" -- selection
+      happens ONLY via `PANEL_PROFILE`; if it's set but unresolvable (file missing, name not
+      found, or the named profile is missing a required field), this is a fail-loud
+      `ConfigError`, never a silent fall-through to step 4.
   4. The autoharn `deployment.json` shape (`LEDGER_DEPLOYMENT` env, else
      `<repo_root>/deployment.json`, else `<repo_root>/../deployment.json` -- the second lets
      this module find autoharn's own record when this repo sits at `tools/autoharn-panel/` inside an
@@ -77,7 +84,7 @@ class ConnectionFacts:
     pg_db: str | None
     pg_user: str | None
     pg_password: str | None
-    source: str  # "uri" | "discrete" | "autoharn-deployment.json"
+    source: str  # "uri" | "discrete" | "profile:<name>" | "autoharn-deployment.json"
 
     def conninfo(self) -> str:
         """A libpq conninfo string (or URI) suitable for `psycopg.connect(conninfo=...)`."""
@@ -115,6 +122,10 @@ class PanelConfig:
     config_source: str         # human-readable summary of which source(s) resolved this config
     maintainer_principal: str  # extension-only concept (the identity a write-capable extension
                                 # co-signs/writes as); core itself never reads this field.
+    active_profile: str | None       # PANEL_PROFILE's value if set and resolved, else None
+    available_profiles: tuple[str, ...]  # ALL profile names declared in panel.toml's
+                                          # [profiles] table (names only -- never exposes
+                                          # non-active profiles' host/db/etc)
 
     @property
     def read_only(self) -> bool:
@@ -124,22 +135,91 @@ class PanelConfig:
         return name in self.extensions
 
 
-def _read_toml_ledger_table(repo_root: Path) -> dict[str, Any]:
+def _panel_toml_path(repo_root: Path) -> Path:
     path_str = os.environ.get("PANEL_CONFIG_FILE")
-    path = Path(path_str) if path_str else (repo_root / "panel.toml")
+    return Path(path_str) if path_str else (repo_root / "panel.toml")
+
+
+def _read_panel_toml(repo_root: Path) -> dict[str, Any]:
+    """Reads the WHOLE panel.toml document once (empty dict if the file doesn't exist), so
+    callers can pull both the `[ledger]` table and the `[profiles]` table from one parse --
+    never two independent re-reads of the same file that could disagree if it changes between
+    them."""
+    path = _panel_toml_path(repo_root)
     if not path.is_file():
         return {}
     try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        return tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as e:
         raise ConfigError(
             f"{path} exists but does not parse as TOML ({e.__class__.__name__}: {e}) -- "
             f"fix it or remove it; this file is optional, but if present it must parse."
         ) from e
-    table = data.get("ledger", {})
+
+
+def _ledger_table(repo_root: Path, doc: dict[str, Any]) -> dict[str, Any]:
+    table = doc.get("ledger", {})
     if not isinstance(table, dict):
+        path = _panel_toml_path(repo_root)
         raise ConfigError(f"{path}'s [ledger] table must be a TOML table, got {type(table).__name__}")
     return table
+
+
+def _profiles_table(repo_root: Path, doc: dict[str, Any]) -> dict[str, Any]:
+    """The optional `[profiles]` table -- a sibling of `[ledger]`, never nested inside it.
+    Each key is a profile name; each value must itself be a TOML table (spec's
+    `[profiles.<name>]` nested-table syntax)."""
+    table = doc.get("profiles", {})
+    path = _panel_toml_path(repo_root)
+    if not isinstance(table, dict):
+        raise ConfigError(f"{path}'s [profiles] table must be a TOML table, got {type(table).__name__}")
+    for name, sub in table.items():
+        if not isinstance(sub, dict):
+            raise ConfigError(
+                f"{path}'s [profiles.{name}] must be a TOML table, got {type(sub).__name__}"
+            )
+    return table
+
+
+def _resolve_active_profile(repo_root: Path, profiles: dict[str, Any]) -> dict[str, str] | None:
+    """PANEL_PROFILE is the ONLY way a profile activates (no toml-level default-profile
+    concept). Returns None if PANEL_PROFILE is unset -- the caller then runs the existing
+    3-source precedence completely unchanged. Raises ConfigError naming exactly what's wrong
+    if PANEL_PROFILE IS set but can't be resolved to a complete profile."""
+    name = os.environ.get("PANEL_PROFILE")
+    if not name:
+        return None
+    path = _panel_toml_path(repo_root)
+    if not path.is_file():
+        raise ConfigError(
+            f"PANEL_PROFILE={name!r} is set but {path} does not exist -- create it with a "
+            f"[profiles.{name}] table, or unset PANEL_PROFILE."
+        )
+    profile = profiles.get(name)
+    if profile is None:
+        available = ", ".join(sorted(profiles)) or "(none declared)"
+        raise ConfigError(
+            f"PANEL_PROFILE={name!r} names a profile not found in {path}'s [profiles] table "
+            f"(available: {available})."
+        )
+    required = ("host", "db", "schema", "kern")
+    missing = [k for k in required if not profile.get(k) or not isinstance(profile.get(k), str)]
+    if missing:
+        raise ConfigError(
+            f"{path}'s [profiles.{name}] is missing or has an empty/non-string value for: "
+            f"{', '.join(missing)} (needs all of {required})"
+        )
+    role = profile.get("role")
+    if role is not None and not isinstance(role, str):
+        raise ConfigError(f"{path}'s [profiles.{name}]'s role must be a string if present, got {type(role).__name__}")
+    return {
+        "name": name,
+        "host": profile["host"],
+        "db": profile["db"],
+        "schema": profile["schema"],
+        "kern": profile["kern"],
+        "role": role or "",
+    }
 
 
 def _load_autoharn_deployment_json(repo_root: Path) -> dict[str, str] | None:
@@ -179,33 +259,55 @@ def _load_autoharn_deployment_json(repo_root: Path) -> dict[str, str] | None:
     return {k: raw[k] for k in required}
 
 
-def _resolve_connection(repo_root: Path, toml_table: dict[str, Any]) -> ConnectionFacts | None:
-    """Steps 1-2 of the precedence (env), falling back to step 3 (panel.toml) per-key. Returns
-    None (never raises) if nothing at all was named -- the caller then tries step 4
-    (deployment.json) before giving up."""
+def _resolve_connection(
+    repo_root: Path, toml_table: dict[str, Any], active_profile: dict[str, str] | None = None,
+) -> ConnectionFacts | None:
+    """Steps 1-2 of the precedence (env), falling back to step 3 (panel.toml's own [ledger]
+    table, per-key), then to the active PANEL_PROFILE (if one resolved) as a further fallback
+    at the SAME priority tier as panel.toml -- tried after [ledger]'s own pg_uri/pghost/
+    pgdatabase keys but before deployment.json. Returns None (never raises) if nothing at all
+    was named -- the caller then tries step 4 (deployment.json) before giving up."""
     uri = os.environ.get("LEDGER_PG_URI") or toml_table.get("pg_uri")
     if uri:
         return ConnectionFacts(pg_uri=uri, pg_host=None, pg_port=None, pg_db=None,
                                 pg_user=None, pg_password=None, source="uri")
-    host = os.environ.get("PGHOST") or toml_table.get("pghost")
+    env_or_toml_host = os.environ.get("PGHOST") or toml_table.get("pghost")
+    env_or_toml_db = os.environ.get("PGDATABASE") or toml_table.get("pgdatabase")
     port = os.environ.get("PGPORT") or toml_table.get("pgport")
-    db = os.environ.get("PGDATABASE") or toml_table.get("pgdatabase")
     user = os.environ.get("PGUSER") or toml_table.get("pguser")
     password = os.environ.get("PGPASSWORD") or toml_table.get("pgpassword")
-    if host or db:
-        return ConnectionFacts(pg_uri=None, pg_host=host, pg_port=str(port) if port else None,
-                                pg_db=db, pg_user=user, pg_password=password, source="discrete")
+
+    if env_or_toml_host or env_or_toml_db:
+        return ConnectionFacts(pg_uri=None, pg_host=env_or_toml_host,
+                                pg_port=str(port) if port else None, pg_db=env_or_toml_db,
+                                pg_user=user, pg_password=password, source="discrete")
+    if active_profile:
+        return ConnectionFacts(pg_uri=None, pg_host=active_profile["host"],
+                                pg_port=str(port) if port else None, pg_db=active_profile["db"],
+                                pg_user=user, pg_password=password,
+                                source=f"profile:{active_profile['name']}")
     return None
 
 
 def load_config(repo_root: Path | None = None) -> PanelConfig:
     root = (repo_root or _REPO_ROOT).resolve()
-    toml_table = _read_toml_ledger_table(root)
+    toml_doc = _read_panel_toml(root)
+    toml_table = _ledger_table(root, toml_doc)
+    profiles = _profiles_table(root, toml_doc)
+    active_profile = _resolve_active_profile(root, profiles)
+    available_profiles = tuple(sorted(profiles))
 
-    connection = _resolve_connection(root, toml_table)
+    connection = _resolve_connection(root, toml_table, active_profile)
     schema = os.environ.get("LEDGER_SCHEMA") or toml_table.get("schema")
     kern_schema = os.environ.get("LEDGER_KERNEL_SCHEMA") or toml_table.get("kernel_schema")
     role = os.environ.get("LEDGER_ROLE") or toml_table.get("role")
+    if active_profile:
+        # only fills in whatever LEDGER_SCHEMA/LEDGER_KERNEL_SCHEMA/LEDGER_ROLE env (and
+        # panel.toml's own [ledger] table) didn't already set -- same backfill pattern as
+        # deployment.json's schema/kern/role backfill below.
+        schema = schema or active_profile["schema"]
+        kern_schema = kern_schema or active_profile["kern"]
+        role = role or (active_profile["role"] or None)
     config_source_parts: list[str] = []
 
     if connection is not None:
@@ -280,4 +382,6 @@ def load_config(repo_root: Path | None = None) -> PanelConfig:
         extensions=extensions,
         config_source=", ".join(config_source_parts),
         maintainer_principal=maintainer_principal,
+        active_profile=active_profile["name"] if active_profile else None,
+        available_profiles=available_profiles,
     )

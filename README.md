@@ -31,6 +31,16 @@ exits nonzero — never a silent default to any host):
 | SSE poll cadence | `PANEL_POLL_INTERVAL` | default 2s |
 | Extensions | `PANEL_EXTENSIONS` | comma-separated; default `autoharn` |
 
+A named connection profile: `PANEL_PROFILE=<name>` selects a `[profiles.<name>]` table in
+`panel.toml` (`host`/`db`/`schema`/`kern`, optional `role`) as another fallback, at the same
+priority tier as `panel.toml`'s own `[ledger]` table — tried after `[ledger]`'s own
+`pg_uri`/`pghost`/`pgdatabase` (those still win outright if set) but before the deployment.json
+source below. There is no toml-level "default profile" — a profile only activates via
+`PANEL_PROFILE`; if it's set but unresolvable (file missing, name not found, or the profile is
+missing a required field), startup refuses with the exact missing/wrong piece named, never a
+silent fall-through. When a profile resolves the connection, `config_source` reads e.g.
+`connection=profile:experience`.
+
 A fourth, autoharn-specific source: if neither `LEDGER_PG_URI` nor any discrete `PG*` field is
 set at all, `config.py` looks for an autoharn `deployment.json` (`LEDGER_DEPLOYMENT` env, else
 `<repo_root>/deployment.json`, else `<repo_root>/../deployment.json` — the latter finds an
