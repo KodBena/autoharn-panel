@@ -1,0 +1,410 @@
+"""extensions.autoharn.ledger_read -- every autoharn-semantic read this panel performs
+(SPEC.md sec 4's extension boundary): commissions, decomposition items (the `panel-item:`
+refs grammar), obligation/witness resolution, work items, review gaps, open questions, and the
+kernel's own closed verdict/independence vocabularies. Ported from the autoharn PoC's
+`panel/backend/ledger_read.py` with import paths adjusted for this repo's layout and its own
+generic `db.connect`/`db.jsonable` (core's connection helper -- SET ROLE only if `cfg.role` is
+set, SET search_path to `<schema>, <kern_schema>`).
+
+Every function here depends on autoharn's own kernel lineage views (`ledger_current`,
+`review_detail`, `work_item_current`, `review_gap`, `question_status`) and the `stamp_secret`
+table -- none of which core (`backend/core/ledger_read.py`) knows about or requires. This is the
+module the extension boundary test (`tests/test_core_bare_schema.py`) proves is NOT needed for
+the core API to serve.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Any
+
+import psycopg
+from psycopg.rows import dict_row
+
+from config import PanelConfig
+from db import connect, jsonable
+from extensions.autoharn.disposition import WitnessFacts, derive_status, group_item_rows
+
+# The kernel's own closed vocabularies (bootstrap/templates/led.tmpl `led review` usage text,
+# kernel/lineage/s15-schema.sql's `review_detail` check constraints in the autoharn deployment
+# this extension targets) -- named ONCE here so the API layer can 400 on an unrecognized value
+# BEFORE shelling out, and so `GET /api/health` can serve them live to the frontend.
+VERDICTS: tuple[str, ...] = ("attest", "attest_with_reservations", "refuse")
+INDEPENDENCE_VALUES: tuple[str, ...] = ("self-review", "technical", "managerial", "financial")
+
+# Status vocabulary a decomposition item's live disposition renders as.
+STATUS_VALUES: tuple[str, ...] = ("OPEN", "WITNESSED", "PARTIAL", "COSIGNED", "AMBIGUOUS")
+
+
+def _connect_unrestricted(cfg: PanelConfig) -> psycopg.Connection:
+    """A connection that deliberately does NOT `SET ROLE` -- used only for the `stamp_secret`
+    armed-check (that table is REVOKEd from the subject role on purpose; checking under `SET
+    ROLE` would always raise `permission denied`, not report False). Caller must close it."""
+    return psycopg.connect(cfg.connection.conninfo(), row_factory=dict_row, autocommit=True)
+
+
+def autoharn_health(cfg: PanelConfig) -> dict[str, Any]:
+    """The autoharn-specific slice of `GET /api/health` (mixed into core's health payload by
+    `routes.py` only when this extension is enabled)."""
+    conn = _connect_unrestricted(cfg)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f'SET search_path = "{cfg.schema}", "{cfg.kern_schema}"')
+            cur.execute(f'SELECT EXISTS (SELECT 1 FROM "{cfg.kern_schema}".stamp_secret) AS armed')
+            armed = bool(cur.fetchone()["armed"])
+    finally:
+        conn.close()
+    return {
+        "stamp_secret_armed": armed,
+        "verdicts": list(VERDICTS),
+        "independence_values": list(INDEPENDENCE_VALUES),
+    }
+
+
+def recent_ledger(cfg: PanelConfig, n: int) -> list[dict[str, Any]]:
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT l.id, l.kind, l.statement, p.name AS actor_name, l.ts, l.stamp_verified
+            FROM ledger_current l LEFT JOIN principal p ON p.id = l.actor
+            ORDER BY l.id DESC LIMIT %s
+            """,
+            (n,),
+        )
+        rows = cur.fetchall()
+    return [jsonable(r) for r in rows]
+
+
+def work_items(cfg: PanelConfig) -> list[dict[str, Any]]:
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT w.slug, w.title, w.state, w.resolution, w.witness, p.name AS claimant_name
+            FROM work_item_current w LEFT JOIN principal p ON p.id = w.claimant
+            ORDER BY w.slug
+            """
+        )
+        rows = cur.fetchall()
+    return [jsonable(r) for r in rows]
+
+
+def review_gap(cfg: PanelConfig) -> list[dict[str, Any]]:
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM review_gap ORDER BY id")
+        rows = cur.fetchall()
+    return [jsonable(r) for r in rows]
+
+
+def question_status(cfg: PanelConfig) -> list[dict[str, Any]]:
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM question_status ORDER BY question_id")
+        rows = cur.fetchall()
+    return [jsonable(r) for r in rows]
+
+
+def ledger_row(cfg: PanelConfig, row_id: int) -> dict[str, Any] | None:
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT l.id, l.kind, l.statement, l.ts, p.name AS actor_name
+            FROM ledger_current l LEFT JOIN principal p ON p.id = l.actor
+            WHERE l.id = %s
+            """,
+            (row_id,),
+        )
+        row = cur.fetchone()
+    return jsonable(row) if row else None
+
+
+def work_item(cfg: PanelConfig, slug: str) -> dict[str, Any] | None:
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT w.slug, w.title, w.state, w.resolution, w.witness, p.name AS claimant_name
+            FROM work_item_current w LEFT JOIN principal p ON p.id = w.claimant
+            WHERE w.slug = %s
+            """,
+            (slug,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        cur.execute(
+            """
+            SELECT id FROM ledger_current
+            WHERE kind = 'work_closed' AND work_slug = %s
+            ORDER BY id DESC LIMIT 1
+            """,
+            (slug,),
+        )
+        closed = cur.fetchone()
+    result = jsonable(row)
+    result["closed_row_id"] = closed["id"] if closed else None
+    return result
+
+
+def maintainer_cosigned(cfg: PanelConfig, target_row_id: int) -> dict[str, Any] | None:
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT r.id AS review_id, d.verdict, p.name AS actor_name
+            FROM ledger_current r
+            JOIN review_detail d ON d.ledger_id = r.id
+            JOIN principal p ON p.id = r.actor
+            WHERE r.kind = 'review' AND r.regards = %s AND d.verdict = 'attest'
+              AND p.name = %s
+            ORDER BY r.id DESC LIMIT 1
+            """,
+            (target_row_id, cfg.maintainer_principal),
+        )
+        row = cur.fetchone()
+    return jsonable(row) if row else None
+
+
+def latest_review_id(cfg: PanelConfig, regards: int, actor_name: str) -> int | None:
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT r.id FROM ledger_current r
+            JOIN principal p ON p.id = r.actor
+            WHERE r.kind = 'review' AND r.regards = %s AND p.name = %s
+            ORDER BY r.id DESC LIMIT 1
+            """,
+            (regards, actor_name),
+        )
+        row = cur.fetchone()
+    return row["id"] if row else None
+
+
+def resolve_witness(cfg: PanelConfig, ref_kind: str, ref: str) -> tuple[WitnessFacts, dict[str, Any] | None]:
+    if ref_kind == "work":
+        resolved = work_item(cfg, ref)
+        if resolved is None:
+            return WitnessFacts(ref_kind, ref, exists=False, substantive=False,
+                                 cosign_target_row=None, maintainer_cosigned=False), None
+        closed_row_id = resolved.get("closed_row_id")
+        substantive = resolved.get("state") == "closed"
+        cosigned = False
+        if closed_row_id is not None:
+            cosigned = maintainer_cosigned(cfg, closed_row_id) is not None
+        facts = WitnessFacts(
+            ref_kind, ref, exists=True, substantive=substantive,
+            cosign_target_row=closed_row_id, maintainer_cosigned=cosigned,
+        )
+        return facts, resolved
+    if ref_kind == "row":
+        try:
+            row_id = int(ref)
+        except ValueError:
+            return WitnessFacts(ref_kind, ref, exists=False, substantive=False,
+                                 cosign_target_row=None, maintainer_cosigned=False), None
+        resolved = ledger_row(cfg, row_id)
+        if resolved is None:
+            return WitnessFacts(ref_kind, ref, exists=False, substantive=False,
+                                 cosign_target_row=None, maintainer_cosigned=False), None
+        cosigned = maintainer_cosigned(cfg, row_id) is not None
+        facts = WitnessFacts(
+            ref_kind, ref, exists=True, substantive=True,
+            cosign_target_row=row_id, maintainer_cosigned=cosigned,
+        )
+        return facts, resolved
+    raise ValueError(f"unknown ref_kind {ref_kind!r} (expected 'work' or 'row')")
+
+
+def cosign_fact(cfg: PanelConfig, target_row_id: int) -> dict[str, Any]:
+    disc = maintainer_cosigned(cfg, target_row_id)
+    if disc:
+        return {"cosigned": True, "by": disc["actor_name"], "review_id": disc["review_id"], "verdict": disc["verdict"]}
+    return {"cosigned": False, "by": None, "review_id": None, "verdict": None}
+
+
+@dataclass(frozen=True)
+class ResolvedWitness:
+    ref_kind: str
+    ref: str
+    resolved: dict[str, Any] | None
+    cosign_target_row: int | None
+    cosign: dict[str, Any]
+    facts: WitnessFacts
+
+
+def resolve_item_witnesses(cfg: PanelConfig, witness_refs: tuple[tuple[str, str], ...]) -> list[ResolvedWitness]:
+    out: list[ResolvedWitness] = []
+    for ref_kind, ref in witness_refs:
+        facts, resolved = resolve_witness(cfg, ref_kind, ref)
+        cosign_info: dict[str, Any] = {"cosigned": False, "by": None, "review_id": None, "verdict": None}
+        if facts.cosign_target_row is not None:
+            cosign_info = cosign_fact(cfg, facts.cosign_target_row)
+        out.append(
+            ResolvedWitness(
+                ref_kind=ref_kind, ref=ref, resolved=resolved,
+                cosign_target_row=facts.cosign_target_row, cosign=cosign_info, facts=facts,
+            )
+        )
+    return out
+
+
+# ---------------------------------------------------------------------------------------------
+# Decomposition-row reading (the frozen `panel-item:<commission_row>:<item_id>` refs grammar).
+# `parse_item_refs` is the ONE anchored parser of that grammar in this tree.
+# ---------------------------------------------------------------------------------------------
+
+_PANEL_ITEM_TOKEN_RE = re.compile(r"^panel-item:(?P<cid>\d+):(?P<iid>[A-Za-z0-9_-]+)$")
+_ROW_TOKEN_RE = re.compile(r"^row:(?P<id>\d+)$")
+_WORK_TOKEN_RE = re.compile(r"^work:(?P<slug>[A-Za-z0-9_.-]+)$")
+
+
+def parse_item_refs(refs_text: str | None, commission_row: int) -> tuple[str | None, list[tuple[str, str]]]:
+    """PURE, anchored, fail-closed parser (see disposition.py's module docstring for the full
+    rationale, ported unchanged from the autoharn PoC): a `refs` string that does not carry
+    EXACTLY ONE well-formed `panel-item:<commission_row>:...` token returns `(None, [])`."""
+    tokens = (refs_text or "").split()
+    matching_item_ids: list[str] = []
+    witness_refs: list[tuple[str, str]] = []
+    wanted_cid = str(commission_row)
+    for tok in tokens:
+        m = _PANEL_ITEM_TOKEN_RE.match(tok)
+        if m:
+            if m.group("cid") == wanted_cid:
+                matching_item_ids.append(m.group("iid"))
+            continue
+        m = _ROW_TOKEN_RE.match(tok)
+        if m:
+            witness_refs.append(("row", m.group("id")))
+            continue
+        m = _WORK_TOKEN_RE.match(tok)
+        if m:
+            witness_refs.append(("work", m.group("slug")))
+            continue
+    if len(matching_item_ids) != 1:
+        return None, []
+    return matching_item_ids[0], witness_refs
+
+
+@dataclass(frozen=True)
+class ParsedItemRow:
+    row_id: int
+    item_id: str
+    witness_refs: tuple[tuple[str, str], ...]
+    statement: str
+    actor_name: str | None
+    ts: str
+
+
+def fetch_parsed_item_rows(cfg: PanelConfig, commission_row: int) -> tuple[ParsedItemRow, ...]:
+    pattern = f"%panel-item:{commission_row}:%"
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT l.id, l.refs, l.statement, l.ts, p.name AS actor_name
+            FROM ledger_current l LEFT JOIN principal p ON p.id = l.actor
+            WHERE l.kind = 'note' AND l.refs LIKE %s
+            ORDER BY l.id
+            """,
+            (pattern,),
+        )
+        rows = cur.fetchall()
+    out: list[ParsedItemRow] = []
+    for row in rows:
+        item_id, witness_refs = parse_item_refs(row["refs"], commission_row)
+        if item_id is None:
+            continue
+        ts = row["ts"]
+        out.append(
+            ParsedItemRow(
+                row_id=row["id"],
+                item_id=item_id,
+                witness_refs=tuple(witness_refs),
+                statement=row["statement"],
+                actor_name=row["actor_name"],
+                ts=ts.isoformat() if hasattr(ts, "isoformat") else ts,
+            )
+        )
+    return tuple(out)
+
+
+def item_id_groups(cfg: PanelConfig, commission_row: int) -> dict[str, tuple[int, ...]]:
+    return group_item_rows(tuple((r.item_id, r.row_id) for r in fetch_parsed_item_rows(cfg, commission_row)))
+
+
+@dataclass(frozen=True)
+class ResolvedItem:
+    item_id: str
+    row_id: int
+    label: str
+    actor_name: str | None
+    ts: str
+    status: str
+    item_cosign: dict[str, Any]
+    witnesses: list[ResolvedWitness]
+
+
+@dataclass(frozen=True)
+class AmbiguousItem:
+    item_id: str
+    candidate_row_ids: tuple[int, ...]
+
+
+Item = ResolvedItem | AmbiguousItem
+
+
+@dataclass(frozen=True)
+class DecompositionItems:
+    commission_row: int
+    items: tuple[Item, ...]
+
+
+def commissions(cfg: PanelConfig) -> list[dict[str, Any]]:
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT l.id, l.statement, l.ts, p.name AS actor_name
+            FROM ledger_current l LEFT JOIN principal p ON p.id = l.actor
+            WHERE l.kind = 'commission'
+            ORDER BY l.id
+            """
+        )
+        rows = cur.fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        row_id = row["id"]
+        item_count = len(item_id_groups(cfg, row_id))
+        ts = row["ts"]
+        out.append(
+            {
+                "row_id": row_id,
+                "statement": row["statement"],
+                "actor_name": row["actor_name"],
+                "ts": ts.isoformat() if hasattr(ts, "isoformat") else ts,
+                "item_count": item_count,
+            }
+        )
+    return out
+
+
+def decomposition_items(cfg: PanelConfig, commission_row: int) -> DecompositionItems:
+    parsed_rows = fetch_parsed_item_rows(cfg, commission_row)
+    groups = group_item_rows(tuple((r.item_id, r.row_id) for r in parsed_rows))
+    by_row_id = {r.row_id: r for r in parsed_rows}
+    items: list[Item] = []
+    for item_id, row_ids in groups.items():
+        if len(row_ids) == 1:
+            r = by_row_id[row_ids[0]]
+            resolved_witnesses = resolve_item_witnesses(cfg, r.witness_refs)
+            item_row_cosigned = maintainer_cosigned(cfg, r.row_id) is not None
+            status = derive_status(item_row_cosigned, [rw.facts for rw in resolved_witnesses])
+            items.append(
+                ResolvedItem(
+                    item_id=item_id,
+                    row_id=r.row_id,
+                    label=r.statement,
+                    actor_name=r.actor_name,
+                    ts=r.ts,
+                    status=status,
+                    item_cosign=cosign_fact(cfg, r.row_id),
+                    witnesses=resolved_witnesses,
+                )
+            )
+        else:
+            items.append(AmbiguousItem(item_id=item_id, candidate_row_ids=tuple(sorted(row_ids))))
+    return DecompositionItems(commission_row=commission_row, items=tuple(items))
