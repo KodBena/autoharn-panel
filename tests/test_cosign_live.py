@@ -100,7 +100,7 @@ def build_cfg() -> PanelConfig:
                                   pg_user=None, pg_password=None, source="test-scratch")
     return PanelConfig(
         repo_root=REPO, connection=connection, schema=SCHEMA, kern_schema=KERN, role=ROLE,
-        led_bin=LED_TMPL, bind_host="127.0.0.1", bind_port=8420, poll_interval=2.0,
+        led_bin=LED_TMPL, read_only_locked=False, bind_host="127.0.0.1", bind_port=8420, poll_interval=2.0,
         extensions=("autoharn",), config_source="test-scratch", maintainer_principal="maintainer",
     )
 

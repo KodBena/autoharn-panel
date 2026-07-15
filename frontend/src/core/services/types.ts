@@ -50,6 +50,7 @@ export interface Health {
   schema: string
   kern_schema: string
   read_only: boolean
+  read_only_reason: 'locked' | 'no-write-conduit' | null
   extensions_enabled: string[]
   active_profile?: string | null
   available_profiles?: string[]

@@ -23,7 +23,7 @@ PANEL_ENV_VARS = (
     "LEDGER_SCHEMA", "LEDGER_KERNEL_SCHEMA", "LEDGER_ROLE", "LED_BIN",
     "PANEL_CONFIG_FILE", "PANEL_PROFILE", "PANEL_BIND", "PANEL_PORT",
     "PANEL_POLL_INTERVAL", "PANEL_EXTENSIONS", "PANEL_MAINTAINER_PRINCIPAL",
-    "LEDGER_DEPLOYMENT",
+    "LEDGER_DEPLOYMENT", "PANEL_READONLY",
 )
 
 
@@ -156,6 +156,103 @@ db = "d"
 """)
     with pytest.raises(SystemExit, match="missing or has an empty/non-string value for: schema, kern"):
         config_module.load_config(repo_root)
+
+
+def test_no_readonly_lock_no_led_bin_reason_is_no_write_conduit(repo_root, monkeypatch):
+    """Existing default case (no LED_BIN, no PANEL_READONLY): read_only stays True as today,
+    read_only_reason is the new additive "no-write-conduit" detail -- must not perturb the
+    boolean test_core_boundary.py already exercises."""
+    monkeypatch.setenv("LEDGER_PG_URI", "host=127.0.0.1 dbname=toy")
+    monkeypatch.setenv("LEDGER_SCHEMA", "s")
+    monkeypatch.setenv("LEDGER_KERNEL_SCHEMA", "k")
+
+    cfg = config_module.load_config(repo_root)
+    assert cfg.led_bin is None
+    assert cfg.read_only is True
+    assert cfg.read_only_reason == "no-write-conduit"
+
+
+def test_led_bin_set_no_lock_is_writable(repo_root, monkeypatch):
+    monkeypatch.setenv("LEDGER_PG_URI", "host=127.0.0.1 dbname=toy")
+    monkeypatch.setenv("LEDGER_SCHEMA", "s")
+    monkeypatch.setenv("LEDGER_KERNEL_SCHEMA", "k")
+    monkeypatch.setenv("LED_BIN", "/usr/local/bin/led")
+
+    cfg = config_module.load_config(repo_root)
+    assert cfg.led_bin == Path("/usr/local/bin/led")
+    assert cfg.read_only is False
+    assert cfg.read_only_reason is None
+
+
+def test_panel_readonly_locks_even_with_led_bin_set(repo_root, monkeypatch):
+    """The safety override: PANEL_READONLY truthy forces read_only=True even though led_bin
+    resolved to a real path -- and led_bin itself is still resolved/stored (config_source stays
+    honest about what WOULD have been writable), never silently skipped."""
+    monkeypatch.setenv("LEDGER_PG_URI", "host=127.0.0.1 dbname=toy")
+    monkeypatch.setenv("LEDGER_SCHEMA", "s")
+    monkeypatch.setenv("LEDGER_KERNEL_SCHEMA", "k")
+    monkeypatch.setenv("LED_BIN", "/usr/local/bin/led")
+    monkeypatch.setenv("PANEL_READONLY", "1")
+
+    cfg = config_module.load_config(repo_root)
+    assert cfg.led_bin == Path("/usr/local/bin/led")  # still resolved, not suppressed
+    assert cfg.read_only is True
+    assert cfg.read_only_reason == "locked"
+    assert "PANEL_READONLY=locked" in cfg.config_source
+
+
+@pytest.mark.parametrize("value", ["true", "TRUE", "yes", "on", "1"])
+def test_panel_readonly_truthy_strings(repo_root, monkeypatch, value):
+    monkeypatch.setenv("LEDGER_PG_URI", "host=127.0.0.1 dbname=toy")
+    monkeypatch.setenv("LEDGER_SCHEMA", "s")
+    monkeypatch.setenv("LEDGER_KERNEL_SCHEMA", "k")
+    monkeypatch.setenv("PANEL_READONLY", value)
+
+    cfg = config_module.load_config(repo_root)
+    assert cfg.read_only_locked is True
+    assert cfg.read_only_reason == "locked"
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no", "off", ""])
+def test_panel_readonly_falsy_strings_do_not_lock(repo_root, monkeypatch, value):
+    monkeypatch.setenv("LEDGER_PG_URI", "host=127.0.0.1 dbname=toy")
+    monkeypatch.setenv("LEDGER_SCHEMA", "s")
+    monkeypatch.setenv("LEDGER_KERNEL_SCHEMA", "k")
+    monkeypatch.setenv("PANEL_READONLY", value)
+
+    cfg = config_module.load_config(repo_root)
+    assert cfg.read_only_locked is False
+    assert cfg.read_only_reason == "no-write-conduit"
+
+
+def test_panel_readonly_from_toml_ledger_table(repo_root, monkeypatch):
+    monkeypatch.setenv("LEDGER_PG_URI", "host=127.0.0.1 dbname=toy")
+    monkeypatch.setenv("LEDGER_SCHEMA", "s")
+    monkeypatch.setenv("LEDGER_KERNEL_SCHEMA", "k")
+    monkeypatch.setenv("LED_BIN", "/usr/local/bin/led")
+    write_panel_toml(repo_root, """
+[ledger]
+readonly = true
+""")
+
+    cfg = config_module.load_config(repo_root)
+    assert cfg.read_only_locked is True
+    assert cfg.read_only_reason == "locked"
+
+
+def test_panel_readonly_env_wins_over_toml(repo_root, monkeypatch):
+    monkeypatch.setenv("LEDGER_PG_URI", "host=127.0.0.1 dbname=toy")
+    monkeypatch.setenv("LEDGER_SCHEMA", "s")
+    monkeypatch.setenv("LEDGER_KERNEL_SCHEMA", "k")
+    monkeypatch.setenv("PANEL_READONLY", "false")
+    write_panel_toml(repo_root, """
+[ledger]
+readonly = true
+""")
+
+    cfg = config_module.load_config(repo_root)
+    assert cfg.read_only_locked is False
+    assert cfg.read_only_reason == "no-write-conduit"
 
 
 def test_profiles_table_nested_correctly_sibling_of_ledger(repo_root, monkeypatch):

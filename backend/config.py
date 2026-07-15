@@ -44,6 +44,14 @@ which is the reason this project has this rule at all.
 
 Lazy imports are banned (this project's engineering register, mirrored here on principle even
 though this is a standalone repo): every import below executes at module load.
+
+`PANEL_READONLY` (also `[ledger].readonly` in panel.toml, boolean or truthy-string) is a
+SEPARATE safety override, orthogonal to the precedence above: when truthy it forces
+`PanelConfig.read_only` to True regardless of whether `led_bin` resolved to a real path --
+`led_bin` is still resolved and stored either way, so `config_source`/diagnostics stay honest
+about what WOULD have been writable. `PanelConfig.read_only_reason` distinguishes "locked"
+(PANEL_READONLY forced it) from "no-write-conduit" (led_bin simply unset, no lock) from `None`
+(genuinely writable) without changing `read_only`'s own boolean for any existing case.
 """
 from __future__ import annotations
 
@@ -115,6 +123,7 @@ class PanelConfig:
     kern_schema: str
     role: str | None          # None => no `SET ROLE` issued (a bare/self-owned schema)
     led_bin: Path | None       # None => read-only mode (spec sec 1)
+    read_only_locked: bool     # PANEL_READONLY forced read-only, independent of led_bin
     bind_host: str
     bind_port: int
     poll_interval: float
@@ -129,10 +138,37 @@ class PanelConfig:
 
     @property
     def read_only(self) -> bool:
-        return self.led_bin is None
+        return self.read_only_locked or self.led_bin is None
+
+    @property
+    def read_only_reason(self) -> str | None:
+        """None => genuinely writable. "locked" => PANEL_READONLY forced it (even though
+        led_bin may be configured and would otherwise have made this writable). "no-write-
+        conduit" => the ordinary case, no PANEL_READONLY lock, led_bin simply unset. This must
+        NOT change `read_only`'s own boolean truth table for any case test_core_boundary.py
+        already exercises -- it is purely additive detail on WHY."""
+        if self.read_only_locked:
+            return "locked"
+        if self.led_bin is None:
+            return "no-write-conduit"
+        return None
 
     def extension_enabled(self, name: str) -> bool:
         return name in self.extensions
+
+
+_TRUTHY_STRINGS = frozenset({"1", "true", "yes", "on"})
+
+
+def _truthy(value: Any) -> bool:
+    """Boolean-ish handling for a value that may come from an env var (always a string) or
+    panel.toml (may already be a TOML bool, or a string an operator wrote by hand) -- matches
+    this module's existing style of accepting either shape rather than forcing one."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in _TRUTHY_STRINGS
+    return bool(value)
 
 
 def _panel_toml_path(repo_root: Path) -> Path:
@@ -346,6 +382,14 @@ def load_config(repo_root: Path | None = None) -> PanelConfig:
     led_bin_str = os.environ.get("LED_BIN") or toml_table.get("led_bin")
     led_bin = Path(led_bin_str) if led_bin_str else None
 
+    # PANEL_READONLY is a safety OVERRIDE, independent of led_bin: it forces read-only even
+    # when a write conduit IS available (the concrete need: agentic UI exploration that must
+    # not risk an accidental write). It never stops led_bin from being resolved/stored above --
+    # config_source/diagnostics stay honest about what WOULD have been writable.
+    readonly_env = os.environ.get("PANEL_READONLY")
+    readonly_raw = readonly_env if readonly_env is not None else toml_table.get("readonly")
+    read_only_locked = _truthy(readonly_raw) if readonly_raw is not None else False
+
     bind_host = os.environ.get("PANEL_BIND") or toml_table.get("bind") or DEFAULT_BIND_HOST
     bind_port = int(os.environ.get("PANEL_PORT") or toml_table.get("port") or DEFAULT_BIND_PORT)
     poll_interval = float(
@@ -368,6 +412,8 @@ def load_config(repo_root: Path | None = None) -> PanelConfig:
 
     config_source_parts.append(f"schema={schema}/{kern_schema}")
     config_source_parts.append("read_only" if led_bin is None else f"led_bin={led_bin}")
+    if read_only_locked:
+        config_source_parts.append("PANEL_READONLY=locked")
 
     return PanelConfig(
         repo_root=root,
@@ -376,6 +422,7 @@ def load_config(repo_root: Path | None = None) -> PanelConfig:
         kern_schema=kern_schema,
         role=role,
         led_bin=led_bin,
+        read_only_locked=read_only_locked,
         bind_host=bind_host,
         bind_port=bind_port,
         poll_interval=poll_interval,

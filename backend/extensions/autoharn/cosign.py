@@ -41,10 +41,19 @@ class CosignResult:
 
 
 def _run_led(cfg: PanelConfig, args: list[str], actor: str | None) -> LedResult:
-    if cfg.led_bin is None:
+    if cfg.led_bin is None or cfg.read_only:
+        # cfg.read_only checked directly (not just led_bin is None) so this guard also trips
+        # under PANEL_READONLY's lock, where led_bin CAN be a real, resolved path -- see
+        # ledger row:70 and the row:58 decision recorded alongside it: app.py's outer route-
+        # mount gate (`if not cfg.read_only`) already makes this unreachable in that state, so
+        # this inner check was already safe either way, but checking cfg.read_only here too
+        # keeps this guard's own message honest instead of silently relying on an assumption
+        # about the caller that a future second caller could violate.
         raise RuntimeError(
-            "cosign._run_led called with LED_BIN unset -- this is a caller bug: routes.py must "
-            "refuse to register any write route at all when cfg.read_only is True."
+            "cosign._run_led called while cfg.read_only is True (led_bin="
+            f"{cfg.led_bin!r}, read_only_reason={cfg.read_only_reason!r}) -- this is a caller "
+            "bug: routes.py must refuse to register any write route at all when cfg.read_only "
+            "is True."
         )
     env: dict[str, str] = {}
     env.update(os.environ)
