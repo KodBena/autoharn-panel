@@ -30,7 +30,12 @@ from extensions.autoharn import cosign as autoharn_cosign
 from extensions.autoharn import routes as autoharn_routes
 from extensions.autoharn.ledger_read import autoharn_health
 
-_FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+_FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+# ^ `frontend/dist` is Vite's build output (`npm run build` in frontend/), never `frontend/`
+# itself -- the Vue port's source is TypeScript/SFCs, unservable as static files, and its own
+# `.gitignore` excludes `dist/` (build output, regenerated, not hand-edited or committed source).
+# An operator/CI step must run `npm run build` before starting this backend in a fresh checkout;
+# see README.md's operator walkthrough.
 
 
 class Broadcaster:
@@ -138,11 +143,12 @@ def create_app() -> FastAPI:
         if not cfg.read_only:
             app.include_router(autoharn_routes.build_write_router())
 
-    # Static-file mount for frontend/, MOUNTED LAST so every /api/* route above already holds
-    # precedence (a mount only ever catches a request no earlier route claimed). `check_dir`
-    # left at its FastAPI default (raises if the directory is missing) -- this repo always
-    # ships frontend/ alongside backend/, so a missing directory here is a real packaging
-    # defect, not a mode this backend degrades gracefully around.
+    # Static-file mount for frontend/dist (Vite's build output), MOUNTED LAST so every /api/*
+    # route above already holds precedence (a mount only ever catches a request no earlier route
+    # claimed). `check_dir` left at its FastAPI default (raises if the directory is missing) --
+    # a fresh checkout must run `npm run build` in frontend/ before this backend can start; a
+    # missing dist/ here is a real packaging/build-order defect, not a mode this backend degrades
+    # gracefully around.
     app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")
     return app
 

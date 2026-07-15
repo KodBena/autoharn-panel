@@ -97,13 +97,20 @@ deployment can currently prove, not an error.
 
 ## 3. Open the SPA
 
-With the backend running, open **`http://127.0.0.1:8420/`** — `backend/app.py` mounts
-`frontend/` as static files at `/`, registered *after* every `/api/*` route so those routes keep
-precedence (`GET /api/nonexistent` still 404s as JSON; it never falls through to `index.html`).
-Do not open `frontend/index.html` directly via a `file://` URL — a root-relative `fetch()` call
-resolves against the document's own origin, and a `file://` document has no origin the backend
-can answer; this is why the fix is a same-origin static mount, not a frontend change, and it
-will not change.
+First build the frontend once (`cd frontend && npm install && npm run build` — see §9); this
+writes `frontend/dist/`, Vite's build output, which is what `backend/app.py` actually mounts
+(never `frontend/` itself, which is TypeScript/SFC source, unservable as static files). With the
+backend running, open **`http://127.0.0.1:8420/`** — the static mount is registered *after*
+every `/api/*` route so those routes keep precedence (`GET /api/nonexistent` still 404s as
+JSON; it never falls through to `index.html`). Do not open `frontend/dist/index.html` directly
+via a `file://` URL — a root-relative `fetch()` call resolves against the document's own origin,
+and a `file://` document has no origin the backend can answer; this is why the fix is a
+same-origin static mount, not a frontend change, and it will not change.
+
+For frontend development, `cd frontend && npm run dev` runs Vite's dev server (default
+`http://127.0.0.1:5173/`) with `/api/*` proxied to the backend (`vite.config.ts`'s
+`PANEL_DEV_PROXY_TARGET`, default `http://127.0.0.1:8420`) — no CORS setup needed, and changes
+hot-reload instead of requiring a rebuild.
 
 ## 4. Pick a commission and read it item by item (autoharn extension)
 
@@ -183,7 +190,12 @@ backend/
   app.py                -- FastAPI app factory; mounts core, conditionally mounts extensions
   core/                  -- ledger-generic reads + routes
   extensions/autoharn/   -- autoharn-semantic reads, cosign write path, routes
-frontend/               -- the SPA (ported PoC frontend; a Vue rebuild is a later phase)
+frontend/               -- Vue 3 + Vite + TypeScript SPA (source); `npm run build` -> dist/
+  src/tokens/tokens.css  -- design tokens (palette extracted verbatim from attic's styles.css)
+  src/core/              -- ledger-generic: components/composables/services/state layers
+  src/extensions/autoharn/ -- autoharn-semantic: same four layers, mirrored
+  scripts/lint-boundaries.mjs -- deny-by-default import-boundary lint, wired into `npm run build`
+attic/frontend-vanilla/ -- the retired vanilla PoC frontend this repo shipped before the Vue port
 seed/                   -- one-time, idempotent ledger-authoring seed scripts (not runtime code)
 tests/                  -- pytest suite: pure disposition tests, live cosign fixture, core-boundary witness
 SPEC.md                 -- the ratified-for-this-build design input (moved here from autoharn's design/)
@@ -196,6 +208,9 @@ SPEC.md                 -- the ratified-for-this-build design input (moved here 
   `self-review`-labeled-honestly.
 - `panel-item-span-anchor` — a future live character-span locator from an item's label into the
   commission's own text is not built.
-- A Vue rebuild of `frontend/` (SPEC.md sec 4's Vue 3 + Vite architecture constraint, and the
-  rest of SPEC.md's P0/P1 view list) has not happened yet — the frontend shipped here is the
-  ported PoC page, kept working, not yet restyled or rebuilt.
+- The Vue port (SPEC.md sec 4) covers PoC feature parity plus the three maintainer verdicts
+  (no-elision, superseded-hidden-by-default-with-toggle, virtualization above 200 rows). The
+  item view (sec 2.2), obligation-tree graph (sec 2.3), and every P1/P2 view remain unbuilt —
+  this port's directory layering (components/composables/services/state, core vs
+  extensions/autoharn) exists so those have an obvious home when built, not because they are
+  built now.

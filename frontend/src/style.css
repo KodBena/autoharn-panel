@@ -1,0 +1,352 @@
+/* src/style.css -- global base rules, built ONLY on tokens.css custom properties (SPEC.md
+ * sec 4: "extract its palette to design tokens first, then restyle nothing"). This file is the
+ * structural carry-over of `attic/frontend-vanilla/styles.css`'s non-palette rules -- selectors
+ * and layout are the same shape; every color reference already used a `var(--...)` in the
+ * source, so nothing here changed except: (a) new `.tabs`/`.tab-btn` rules for this port's tab
+ * strip (the vanilla PoC had no tabs, just stacked panels -- new rule, but sourced from the SAME
+ * token set, no new color literal), (b) `.no-elide` / `.toggle-row` / `.virtual-*` rules added
+ * for the three maintainer verdicts (SPEC.md sec 0/2.1), again token-only.
+ */
+@import "./tokens/tokens.css";
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#app { padding: 1rem 1.25rem 3rem; max-width: 1180px; margin: 0 auto; }
+
+a { color: var(--accent); }
+
+h1, h2, h3 { font-weight: 600; margin: 0 0 0.5rem; }
+h1 { font-size: 1.2rem; }
+h2 { font-size: 1.05rem; margin-top: 0; }
+h3 { font-size: 0.92rem; color: var(--text-dim); text-transform: none; }
+
+.muted { color: var(--text-dim); }
+.mono { font-family: var(--mono); font-size: 0.85em; }
+
+header.top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+header.top .title-block { display: flex; align-items: baseline; gap: 0.6rem; }
+
+.health-strip {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  align-items: center;
+}
+
+.dot {
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  border-radius: 50%;
+  margin-right: 0.35em;
+  background: var(--text-dim);
+}
+.dot.live { background: #4c8a4a; }
+.dot.polling { background: #b98a2e; }
+.dot.down { background: var(--danger); }
+
+/* tab strip -- new for this port (board-ish tabs), token-only colors */
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+  padding-bottom: 0;
+}
+.tab-btn {
+  font-family: inherit;
+  font-size: 0.86rem;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.tab-btn:hover { background: var(--open-bg); color: var(--text); }
+.tab-btn.active {
+  background: var(--panel-bg);
+  color: var(--text);
+  border-color: var(--border);
+  font-weight: 600;
+}
+
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel > h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.commission-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+select, input[type=text], input[type=number], textarea {
+  font-family: inherit;
+  font-size: 0.88rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button {
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.32rem 0.65rem;
+  border: 1px solid var(--accent-dim);
+  border-radius: 5px;
+  background: var(--panel-bg);
+  color: var(--accent);
+  cursor: pointer;
+}
+button:hover { background: var(--open-bg); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary { background: var(--accent); color: var(--panel-bg); border-color: var(--accent); }
+button.primary:hover { filter: brightness(1.08); }
+
+.commission-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--open-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.7rem 0.8rem;
+  margin-bottom: 1rem;
+  font-size: 0.86rem;
+  /* no max-height/overflow-y clamp: the vanilla PoC clamped this to 16rem with a scrollbar,
+     which is a content-hiding-by-default affordance (SPEC.md sec 0 no-elision verdict) -- the
+     full statement is always visible here now, however long. */
+}
+
+.item-list { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.item-row {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0.6rem 0.75rem;
+}
+
+.item-row.ambiguous {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.item-row.superseded { opacity: 0.72; }
+
+.item-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.item-id { font-weight: 600; font-family: var(--mono); font-size: 0.85rem; }
+.item-label { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.item-meta { color: var(--text-dim); font-size: 0.78rem; }
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.badge-OPEN { background: var(--open-bg); color: var(--open-text); }
+.badge-WITNESSED { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-text); }
+.badge-PARTIAL { background: var(--warn-bg); color: var(--accent); border: 1px dashed var(--accent); }
+.badge-COSIGNED { background: var(--ok-bg); color: var(--ok-text); }
+.badge-AMBIGUOUS { background: var(--danger); color: #fff; }
+.badge-SUPERSEDED { background: var(--open-bg); color: var(--text-dim); border: 1px dashed var(--border); }
+
+.witness-list {
+  margin-top: 0.5rem;
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.witness-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.82rem;
+}
+
+.witness-facts {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+  color: var(--text-dim);
+}
+
+.tag {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.02rem 0.35rem;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+}
+
+.cosign-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.cosign-form {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 0.35rem;
+  padding: 0.5rem;
+  background: var(--open-bg);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.cosign-form input[type=text] { flex: 1 1 220px; min-width: 160px; }
+
+.cosign-note {
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  flex-basis: 100%;
+}
+
+.cosign-result {
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+}
+.cosign-result.ok { background: var(--ok-bg); color: var(--ok-text); }
+.cosign-result.refused { background: var(--danger-bg); color: var(--danger); }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.82rem;
+  table-layout: fixed;
+}
+th, td {
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  /* no-elision (SPEC.md sec 0): wrap, never ellipsis-clip, load-bearing statement text */
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+th { color: var(--text-dim); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.02em; }
+tr:last-child td { border-bottom: none; }
+tr.superseded-row { opacity: 0.72; }
+tr.superseded-row td:first-child { border-left: 3px solid var(--border); }
+
+.scroll-x { overflow-x: auto; }
+
+.empty-note { color: var(--text-dim); font-style: italic; padding: 0.4rem 0; }
+
+.error-banner {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.refresh-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+.toggle-row input[type=checkbox] { margin: 0; }
+
+/* virtualized list scaffolding (SPEC.md sec 3 perf budget: virtualize above 200 rows) --
+ * flex-child scroll container needs min-height: 0 or it sizes to fit ALL content instead of
+ * clipping to the visible slice (omega reap Don't-do #7), and scroll-anchoring must be off on
+ * the virtualized viewport (same entry, second half) or window-height changes fight the
+ * browser's anchor heuristic.
+ */
+.virtual-viewport {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-anchor: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.virtual-inner { position: relative; width: 100%; }
+.virtual-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+footer.foot {
+  margin-top: 2rem;
+  color: var(--text-dim);
+  font-size: 0.76rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}

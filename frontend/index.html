@@ -1,79 +1,13 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>autoharn — maintainer co-sign panel</title>
-<link rel="stylesheet" href="styles.css">
-</head>
-<body>
-
-<header class="top">
-  <div class="title-block">
-    <h1>Maintainer co-sign panel</h1>
-    <span class="muted">any commission, live</span>
-  </div>
-  <div class="health-strip" id="health-strip">
-    <span><span class="dot" id="live-dot"></span><span id="live-label">connecting…</span></span>
-    <span id="health-schema" class="muted"></span>
-    <span id="health-stamp" class="muted"></span>
-  </div>
-</header>
-
-<div id="global-error"></div>
-
-<section class="panel" id="commission-panel">
-  <h2>Commission</h2>
-  <div class="commission-picker">
-    <label for="commission-select">Commission:</label>
-    <select id="commission-select"><option>loading…</option></select>
-    <button id="refresh-commission-btn">Refresh</button>
-    <span class="muted mono" id="commission-picker-note"></span>
-  </div>
-  <div id="commission-body">
-    <p class="empty-note">Pick a commission above.</p>
-  </div>
-</section>
-
-<section class="panel">
-  <h2>Recent ledger activity</h2>
-  <div class="scroll-x"><table id="ledger-table">
-    <thead><tr><th>id</th><th>kind</th><th>actor</th><th>ts</th><th>stamp</th><th>statement</th></tr></thead>
-    <tbody></tbody>
-  </table></div>
-</section>
-
-<section class="panel">
-  <h2>Work items</h2>
-  <div class="scroll-x"><table id="work-table">
-    <thead><tr><th>slug</th><th>state</th><th>actor</th><th>ts</th><th>statement</th></tr></thead>
-    <tbody></tbody>
-  </table></div>
-</section>
-
-<section class="panel">
-  <h2>Review gaps</h2>
-  <div class="scroll-x"><table id="review-gap-table">
-    <thead><tr><th>row</th><th>kind</th><th>actor</th><th>ts</th><th>statement</th></tr></thead>
-    <tbody></tbody>
-  </table></div>
-</section>
-
-<section class="panel">
-  <h2>Questions</h2>
-  <div class="scroll-x"><table id="questions-table">
-    <thead><tr><th>row</th><th>status</th><th>actor</th><th>ts</th><th>statement</th></tr></thead>
-    <tbody></tbody>
-  </table></div>
-</section>
-
-<footer class="foot">
-  Reads are live SELECTs over the ledger; every co-sign action shells <code>./led review</code> as the
-  configured maintainer principal and shows the kernel's response verbatim, including refusals.
-  Live-update via SSE (<code>/api/events</code>), falling back to ~2s polling of <code>/api/watermark</code>
-  on disconnect.
-</footer>
-
-<script src="app.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ledger panel</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>

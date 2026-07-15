@@ -1,0 +1,59 @@
+/* src/tokens/tokens.css
+ *
+ * Design tokens (CSS custom properties) extracted VERBATIM from the vanilla PoC's
+ * `attic/frontend-vanilla/styles.css` `:root` block and its `prefers-color-scheme: dark`
+ * override -- no color value here was invented or adjusted for this port. The maintainer
+ * verdict this file exists to satisfy: "EXACTLY the same light color scheme." Every component
+ * in this app styles itself from these custom properties only; nothing below this file may be
+ * restyled -- extend the token set here first if a new one is needed, never hardcode a color
+ * in a component <style> block.
+ *
+ * Token groups, same shape as the source: background/surface, text, border, accent, semantic
+ * (danger/ok/warn/open), and the two font stacks. The dark block is carried over unchanged too
+ * (SPEC.md sec 6 forbids dark mode "before the light scheme is settled" as a NEW design effort,
+ * not retroactively -- this is the PoC's existing dark values, ported as-is, not a fresh dark
+ * mode designed for this app).
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #f7f7f5;
+  --panel-bg: #ffffff;
+  --text: #1b1b18;
+  --text-dim: #5b5b55;
+  --border: #d9d8d2;
+  --accent: #3a5a78;
+  --accent-dim: #6d87a0;
+  --danger: #8a2f2f;
+  --danger-bg: #fbeaea;
+  --ok-bg: #e7f0e6;
+  --ok-text: #2f5c2a;
+  --warn-bg: #fbf3df;
+  --warn-text: #7a5b13;
+  --open-bg: #eceae4;
+  --open-text: #55524a;
+
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a;
+    --panel-bg: #202225;
+    --text: #e5e4e0;
+    --text-dim: #a2a19b;
+    --border: #38393d;
+    --accent: #7ea3c4;
+    --accent-dim: #52708a;
+    --danger: #d98b8b;
+    --danger-bg: #3a2323;
+    --ok-bg: #23331f;
+    --ok-text: #a9d19f;
+    --warn-bg: #3a3120;
+    --warn-text: #e0c477;
+    --open-bg: #2b2c2f;
+    --open-text: #b4b3ac;
+  }
+}
