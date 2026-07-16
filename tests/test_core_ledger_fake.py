@@ -167,15 +167,6 @@ def test_rows_rejects_negative_offset() -> None:
         fake.rows(CFG, offset=-1)
 
 
-def test_count_rows_has_no_sort_or_limit_kwargs() -> None:
-    # count_rows's own Protocol signature carries no sort_by/limit/offset at all -- calling it
-    # with one is a TypeError, proving the fake's signature matches the Protocol's, not a looser
-    # one that would silently accept (and ignore) extra kwargs.
-    fake = FakeCoreLedgerReader()
-    with pytest.raises(TypeError):
-        fake.count_rows(CFG, limit=5)  # type: ignore[call-arg]
-
-
 # ---- acceptance criterion (5): filter/order semantics against hand-built multi-row data -------
 
 def _rows_fixture() -> FakeCoreLedgerReader:
@@ -285,13 +276,6 @@ def test_rows_result_ts_is_isoformat_string_not_datetime() -> None:
     fake = _rows_fixture()
     row = fake.rows(CFG, kind="decision", sort_by="id", sort_dir="asc", limit=1)[0]
     assert row["ts"] == _ts(1).isoformat()
-
-
-def test_count_rows_matches_the_same_filter_rows_would_apply() -> None:
-    fake = _rows_fixture()
-    n = fake.count_rows(CFG, kind="decision")
-    ids = {r["id"] for r in fake.rows(CFG, kind="decision", limit=200)}
-    assert n == len(ids) == 2
 
 
 def test_facet_counts_is_current_rows_only_by_kind() -> None:

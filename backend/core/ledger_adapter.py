@@ -4,7 +4,10 @@ row 931/619b95d). Every method's SQL body is relocated VERBATIM (ADR-0004 minima
 is the "downstream item" `core/ports.py`'s own docstring named as expected to do exactly this) from
 what were, until this item, two separate module-level-function files: `core/ledger_read.py` (the
 7 ledger-generic reads: `watermark`, `rows`, `count_rows`, `facet_counts`, `row_by_id`,
-`supersede_chain`, `generic_row_refs`) and `core/backend_surface.py` (the 3 DB-surface-introspection
+`supersede_chain`, `generic_row_refs` -- `count_rows` was subsequently REMOVED as genuinely dead
+code, ledger row 1093, work item core-coverage-tests row 938: still zero real callers anywhere in
+the route surface after this relocation, so this class now carries 6 of those 7, not 7) and
+`core/backend_surface.py` (the 3 DB-surface-introspection
 reads: `backend_surface`, `is_exposed_by_backend`, `relation_count`). Both source files are GONE as
 of this item -- nothing else in this repo imported their module-level functions directly (grep-
 confirmed against the whole `backend/`/`tests/` tree before deleting them: only `core/routes.py`
@@ -207,8 +210,10 @@ class PostgresCoreLedgerReader:
         """The Board view's one query home (SPEC.md sec 2.1): every facet (kind, actor, date-range,
         free-text, since-id for live-update tailing) is a WHERE clause added to the SAME query that
         also supplies the facet's own count -- callers wanting a count call this with `limit` large
-        enough, or call `count_rows` below with the identical filter arguments; there is no second,
-        independently-derived counting query.
+        enough; there is no second, independently-derived counting query. (A sibling `count_rows`
+        method applying the same filter to a bare `count(*)` existed here but was removed as
+        genuinely dead code -- ledger row 1093, work item core-coverage-tests row 938 -- since it
+        had zero real callers anywhere in the route surface.)
 
         `since`/`until` are the date-range facet (SPEC.md sec 2.1): ISO-8601 timestamps (any form
         Postgres's `timestamptz` input parser accepts -- a bare date like `2026-07-01` works too),
@@ -267,37 +272,10 @@ class PostgresCoreLedgerReader:
             result = cur.fetchall()
         return [jsonable(r) for r in result]
 
-    def count_rows(
-        self,
-        cfg: PanelConfig,
-        *,
-        kind: str | None = None,
-        actor_name: str | None = None,
-        q: str | None = None,
-        include_superseded: bool = False,
-    ) -> int:
-        """The SAME filter `rows()` applies, projected to `count(*)` -- one home for a facet's
-        count, per SPEC.md sec 2.1's own "one home per count" rule."""
-        where = ["1=1"] if include_superseded else [_CURRENT_FILTER]
-        params: list[Any] = []
-        if kind is not None:
-            where.append("l.kind = %s")
-            params.append(kind)
-        if actor_name is not None:
-            where.append("p.name = %s")
-            params.append(actor_name)
-        if q is not None:
-            where.append("l.statement ILIKE %s")
-            params.append(f"%{q}%")
-        sql_text = f"SELECT count(*) AS n FROM ledger l LEFT JOIN principal p ON p.id = l.actor WHERE {' AND '.join(where)}"
-        with connect(cfg) as conn, conn.cursor() as cur:
-            cur.execute(sql_text, params)
-            return cur.fetchone()["n"]
-
     def facet_counts(self, cfg: PanelConfig) -> dict[str, int]:
         """Counts by kind, over CURRENT rows only -- the Board view's kind-facet counts, computed
-        by one grouped query (still the single query family `rows`/`count_rows` share, not a
-        third independently-derived path)."""
+        by one grouped query (still the single query family `rows` shares, not a second
+        independently-derived path)."""
         with connect(cfg) as conn, conn.cursor() as cur:
             cur.execute(f"SELECT kind, count(*) AS n FROM ledger l WHERE {_CURRENT_FILTER} GROUP BY kind")
             result = cur.fetchall()

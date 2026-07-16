@@ -187,19 +187,6 @@ class FakeCoreLedgerReader:
         page = ordered[offset:offset + limit]
         return [_jsonable(r) for r in page]
 
-    def count_rows(
-        self,
-        cfg: PanelConfig,
-        *,
-        kind: str | None = None,
-        actor_name: str | None = None,
-        q: str | None = None,
-        include_superseded: bool = False,
-    ) -> int:
-        return len(self._filtered(
-            kind=kind, actor_name=actor_name, q=q, include_superseded=include_superseded,
-        ))
-
     def facet_counts(self, cfg: PanelConfig) -> dict[str, int]:
         out: dict[str, int] = {}
         for r in self.rows_data:

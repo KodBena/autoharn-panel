@@ -198,3 +198,56 @@ def test_bare_schema_rows_actor_and_date_range_facets(bare_app) -> None:
 
         bad_sort = client.get("/api/rows", params={"sort_by": "statement"})
         assert bad_sort.status_code == 400
+
+
+def test_bare_schema_supersede_chain_real_multi_row_walk(bare_app) -> None:
+    """core-coverage-tests (row:938, acceptance criteria row:1091, refs row:894): the ONLY
+    existing supersede_chain coverage against the REAL `PostgresCoreLedgerReader` (as opposed to
+    `tests/fakes/core_ledger_reader.py`'s own already-thorough multi-row fake tests) was
+    `test_bare_schema_core_reads_a_written_row`'s single unsuperseded row -- predecessors=[],
+    successor=None, the trivial case row:894's audit flagged as insufficient. This proves the
+    REAL adapter's multi-hop walk (`core/ledger_adapter.py`'s `supersede_chain`, reached here via
+    `GET /api/rows/{row_id}`, exactly as `core/routes.py`'s `api_row` calls it) against a genuine
+    4-row chain in actual Postgres: root <- mid1 <- mid2 <- tip. Mirrors
+    `tests/test_core_ledger_fake.py`'s own `_chain_fixture`/`test_supersede_chain_multi_row_*`
+    tests structurally, over real inserted rows instead of hand-built dicts."""
+    author_id_r = psql(f"SELECT id FROM {KERN}.principal WHERE name='author';")
+    author_id = int(author_id_r.stdout.strip())
+
+    def insert_row(statement: str, *, supersedes: int | None) -> int:
+        supersedes_sql = str(supersedes) if supersedes is not None else "NULL"
+        ins = psql(
+            f"INSERT INTO {SCHEMA}.ledger (kind, statement, actor, supersedes) VALUES "
+            f"('note', '{statement}', {author_id}, {supersedes_sql}) RETURNING id;"
+        )
+        assert ins.returncode == 0, ins.stderr
+        return int(ins.stdout.strip())
+
+    root_id = insert_row("chain root", supersedes=None)
+    mid1_id = insert_row("chain mid1, supersedes root", supersedes=root_id)
+    mid2_id = insert_row("chain mid2, supersedes mid1", supersedes=mid1_id)
+    tip_id = insert_row("chain tip, supersedes mid2, current", supersedes=mid2_id)
+
+    with TestClient(bare_app) as client:
+        root = client.get(f"/api/rows/{root_id}").json()
+        assert root["predecessors"] == []
+        assert root["successor"] == mid1_id
+
+        # nearest-hop-first order (mid1, then root) -- the real adapter's own loop appends each
+        # hop's OWN `supersedes` target before following it, same walk order the fake replicates.
+        mid1 = client.get(f"/api/rows/{mid1_id}").json()
+        assert mid1["predecessors"] == [root_id]
+        assert mid1["successor"] == mid2_id
+
+        mid2 = client.get(f"/api/rows/{mid2_id}").json()
+        assert mid2["predecessors"] == [mid1_id, root_id]
+        assert mid2["successor"] == tip_id
+
+        tip = client.get(f"/api/rows/{tip_id}").json()
+        assert tip["predecessors"] == [mid2_id, mid1_id, root_id]
+        assert tip["successor"] is None
+
+        # the default Board view (superseded hidden) must show only the tip of this chain
+        current_ids = {r["id"] for r in client.get("/api/rows").json()}
+        assert tip_id in current_ids
+        assert root_id not in current_ids and mid1_id not in current_ids and mid2_id not in current_ids

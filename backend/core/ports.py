@@ -71,6 +71,13 @@ class CoreLedgerPort(Protocol):
     `extensions/autoharn/ports.py`'s `parse_item_refs`/`parse_witness_refs`/`parse_resource_fields`,
     which stay plain functions with no antecedent
     licensing their inclusion here.
+
+    COUNT_ROWS -- REMOVED (ledger row 1093, work item core-coverage-tests, row 938): the audit's
+    original 7-method list included `count_rows`, moved here unchanged from `core/ledger_read.py`
+    at first. A fresh post-migration grep confirmed it still had zero real callers anywhere in the
+    route surface (row 894's original "dead code" finding, still true), so it was removed outright
+    rather than given a test to cover a caller that does not exist -- this Protocol now names 6
+    methods (5 DB-touching + `generic_row_refs`), not 7.
     """
 
     def watermark(self, cfg: PanelConfig) -> dict[str, Any]:
@@ -98,19 +105,6 @@ class CoreLedgerPort(Protocol):
         date-range, free-text, since-id tailing, column-sort) as a WHERE/ORDER-BY clause on the
         same query. Raises `ValueError` on an unrecognized `sort_by`/`sort_dir` or an out-of-range
         `limit`/`offset`, which the route layer turns into a 400/422."""
-        ...
-
-    def count_rows(
-        self,
-        cfg: PanelConfig,
-        *,
-        kind: str | None = None,
-        actor_name: str | None = None,
-        q: str | None = None,
-        include_superseded: bool = False,
-    ) -> int:
-        """The SAME filter `rows()` applies, projected to `count(*)` -- one home for a facet's
-        count."""
         ...
 
     def facet_counts(self, cfg: PanelConfig) -> dict[str, int]:
