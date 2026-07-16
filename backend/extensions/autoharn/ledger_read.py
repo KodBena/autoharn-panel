@@ -150,7 +150,26 @@ def work_items(cfg: PanelConfig) -> list[dict[str, Any]]:
 
 
 def review_gap(cfg: PanelConfig) -> list[dict[str, Any]]:
-    return _fetch_jsonable_rows(cfg, "SELECT * FROM review_gap ORDER BY id")
+    """`review_gap` (kernel view: `id, actor, scope, assigned_by`, s15/re-issued s32) plus each
+    row's `actor`/`assigned_by` principal ids resolved to names -- two LEFT JOINs against
+    `principal`, one per id column, the same join-in-a-name pattern every other tab's query
+    already uses (`work_items`' `claimant_name`, `recent_ledger`/`commissions`' `actor_name`).
+    Addresses cycle-5 audit finding 9 (MINOR): this was the one remaining read in this module
+    still surfacing bare principal ids instead of names, because the view itself carries no
+    join of its own. Keeps the original `id, actor, scope, assigned_by` columns verbatim (nothing
+    reading those bare ids breaks) and ADDS `actor_name`/`assigned_by_name` alongside them, same
+    additive-column convention as the tabs above."""
+    return _fetch_jsonable_rows(
+        cfg,
+        """
+        SELECT rg.id, rg.actor, pa.name AS actor_name, rg.scope,
+               rg.assigned_by, pb.name AS assigned_by_name
+        FROM review_gap rg
+        LEFT JOIN principal pa ON pa.id = rg.actor
+        LEFT JOIN principal pb ON pb.id = rg.assigned_by
+        ORDER BY rg.id
+        """,
+    )
 
 
 def work_violations(cfg: PanelConfig) -> list[dict[str, Any]]:

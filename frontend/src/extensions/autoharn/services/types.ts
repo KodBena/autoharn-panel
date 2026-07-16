@@ -87,14 +87,20 @@ export interface WorkItemRow {
 }
 
 // review_gap: the live kernel view this route selects from (kernel/lineage s15-schema.sql at
-// the time of this port) does NOT carry statement/ts/actor_name -- the vanilla PoC's app.js
-// assumed it did (a stale assumption in that file, not reproduced here). Its real, narrower
-// columns:
+// the time of this port, re-issued s32) does NOT carry statement/ts/actor_name itself -- the
+// vanilla PoC's app.js assumed it did (a stale assumption in that file, not reproduced here).
+// `actor_name`/`assigned_by_name` below are NOT columns of the view -- `ledger_read.review_gap()`
+// (backend/extensions/autoharn/ledger_read.py) joins them in from `principal`, same
+// join-in-a-name pattern every other tab's query already uses (`work_items`' `claimant_name`,
+// `recent_ledger`/`commissions`' `actor_name`); addresses cycle-5 audit finding 9 (MINOR), this
+// having been the one remaining raw-id surface left in the app.
 export interface ReviewGapRow {
   id: number // the ledger row (the statement) the countersign obligation is against
-  actor: number // principal id owing the countersign -- NOT joined to a name by this view
+  actor: number // principal id owing the countersign
+  actor_name: string | null // joined in by ledger_read.review_gap(), not a view column
   scope: string
   assigned_by: number
+  assigned_by_name: string | null // joined in by ledger_read.review_gap(), not a view column
 }
 
 // question_status: the kernel view itself carries only question_id/question_kind/answered/
