@@ -30,7 +30,15 @@ async function loadCommissions(): Promise<void> {
   if (commissions.value.length === 0) return
   const stillPresent = commissions.value.some((c) => c.row_id === selectedRow.value)
   if (!stillPresent) {
-    const preferred = commissions.value.find((c) => c.row_id === 680) ?? commissions.value[0]
+    // Default to the most recent commission that actually has decomposed items -- landing on
+    // the numerically-first commission (which may well be item-count 0) leaves a first-time
+    // user staring at an empty screen with no cue that most commissions are simply sparse.
+    // Falls back to the numerically-first commission (commissions[0]) only when NONE have
+    // items yet, so the picker never has no selection.
+    const withItems = commissions.value.filter((c) => c.item_count > 0)
+    const preferred = withItems.length
+      ? withItems.reduce((latest, c) => (c.ts > latest.ts ? c : latest))
+      : commissions.value[0]
     selectedRow.value = preferred.row_id
   }
 }
