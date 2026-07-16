@@ -88,6 +88,17 @@ def api_watermark(request: Request) -> dict[str, Any]:
     return ledger_read.watermark(cfg)
 
 
+_SSE_HEARTBEAT_INTERVAL_S = 20
+# ^ cycle-4 audit finding 12 (MINOR): on an idle deployment the generator below only ever
+# yielded on a genuine ledger write, so a stalled/silently-dropped connection was
+# indistinguishable from a merely-quiet one (confirmed live: 12+s of zero bytes past headers).
+# A comment-only SSE line (no `data:` field) is a standard keep-alive per the SSE spec --
+# `EventSource` clients ignore it as a message but the byte traffic itself proves the stream
+# (and any intermediary proxy) is still alive. 20s is comfortably under typical proxy/idle-
+# connection timeouts (commonly 30-60s) while staying well above this endpoint's real write
+# cadence.
+
+
 @router.get("/api/events")
 async def api_events(request: Request) -> StreamingResponse:
     state = request.app.state.panel
@@ -96,7 +107,13 @@ async def api_events(request: Request) -> StreamingResponse:
     async def gen() -> AsyncIterator[bytes]:
         try:
             while True:
-                event = await queue.get()
+                try:
+                    event = await asyncio.wait_for(
+                        queue.get(), timeout=_SSE_HEARTBEAT_INTERVAL_S
+                    )
+                except asyncio.TimeoutError:
+                    yield b": heartbeat\n\n"
+                    continue
                 yield f"data: {json.dumps(event)}\n\n".encode()
         finally:
             state.broadcaster.unsubscribe(queue)
