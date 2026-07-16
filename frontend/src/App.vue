@@ -73,7 +73,15 @@ onMounted(loadHealth)
       <span v-if="healthState.error" class="error-banner">{{ healthState.error }}</span>
       <span>
         <span class="dot" :class="status"></span>
-        <span>{{ status === 'live' ? 'live (SSE)' : status === 'polling' ? 'polling (~2s)' : status === 'down' ? 'disconnected' : 'connecting' }}</span>
+        <span
+          :title="status === 'live'
+            ? 'Ledger updates are streamed live over Server-Sent Events; no polling delay.'
+            : status === 'polling'
+            ? 'SSE is unavailable; falling back to polling the ledger every ~2 seconds.'
+            : status === 'down'
+            ? 'Live-update connection is down; ledger data may be stale until it reconnects.'
+            : 'Establishing the live-update connection.'"
+        >{{ status === 'live' ? 'live (SSE)' : status === 'polling' ? 'polling (~2s)' : status === 'down' ? 'disconnected' : 'connecting' }}</span>
       </span>
     </div>
   </header>
