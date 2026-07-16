@@ -58,6 +58,15 @@ const hasNextPage = computed(() => rows.value.length === limit.value)
 const hasPrevPage = computed(() => offset.value > 0)
 const pageNumber = computed(() => Math.floor(offset.value / limit.value) + 1)
 
+// limit=0 is valid REST-wise (the API correctly returns zero rows) but reads as a genuine
+// no-matches result unless called out -- a fat-fingered 0 in the limit field otherwise looks
+// identical to an over-narrow kind/actor/date filter.
+const emptyText = computed(() =>
+  limit.value === 0
+    ? 'Limit is set to 0 -- increase it to see rows.'
+    : 'No ledger rows match this filter.',
+)
+
 function goToNextPage(): void {
   if (hasNextPage.value) offset.value += limit.value
 }
@@ -233,7 +242,7 @@ defineExpose({ reload: load })
         :superseded-ids="supersededIds"
         :sort-by="sortBy"
         :sort-dir="sortDir"
-        empty-text="No ledger rows match this filter."
+        :empty-text="emptyText"
         @sort-change="onSortChange"
         @row-click="toggleExpand"
       />
