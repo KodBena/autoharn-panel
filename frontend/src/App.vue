@@ -61,6 +61,9 @@ onMounted(loadHealth)
         v-if="healthState.health?.read_only"
         class="badge"
         :class="healthState.health?.read_only_reason === 'locked' ? 'badge-locked' : 'badge-OPEN'"
+        :title="healthState.health?.read_only_reason === 'locked'
+          ? 'An operator deliberately disabled writes at startup (PANEL_READONLY), independent of whether a write conduit is configured.'
+          : undefined"
       >{{ healthState.health?.read_only_reason === 'locked' ? 'read-only (locked)' : 'read-only' }}</span>
     </div>
     <div class="health-strip">

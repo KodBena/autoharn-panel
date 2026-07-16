@@ -294,6 +294,53 @@ tr.superseded-row td:first-child { border-left: 3px solid var(--border); }
 
 .scroll-x { overflow-x: auto; }
 
+/* Responsive card layout below ~800px (consult minor finding: at 390px the statement column
+ * compressed to ~90px, wrapping almost character-by-character). Only tables carrying the
+ * `stack-on-narrow` class (DataTable.vue's plain, non-virtualized `<table>` path) degrade this
+ * way; the virtualized (>200 row) grid path already uses its own div/grid layout and is
+ * untouched. Desktop (table) layout above the breakpoint is unchanged.
+ */
+@media (max-width: 800px) {
+  table.stack-on-narrow thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  table.stack-on-narrow,
+  table.stack-on-narrow tbody,
+  table.stack-on-narrow tr,
+  table.stack-on-narrow td {
+    display: block;
+    width: 100%;
+  }
+  table.stack-on-narrow tr {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.4rem 0.5rem;
+    margin-bottom: 0.6rem;
+  }
+  table.stack-on-narrow tr:last-child { margin-bottom: 0; }
+  table.stack-on-narrow td {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+    border-bottom: none;
+  }
+  table.stack-on-narrow td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    min-width: 5.5rem;
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+}
+
 .empty-note { color: var(--text-dim); font-style: italic; padding: 0.4rem 0; }
 
 .error-banner {

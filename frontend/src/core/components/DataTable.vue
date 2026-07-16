@@ -17,6 +17,14 @@
        trades table semantics for windowing -- same visual column layout, `role="table"` ARIA
        restores the semantics lost by dropping the real element).
 
+  Below ~800px viewport width, the plain `<table>` path (the `stack-on-narrow` class below)
+  degrades to a stacked-card layout via CSS alone (see style.css's `@media (max-width: 800px)`
+  block) -- each `<td>` becomes its own labeled line (`data-label`, set in DataRow.vue, supplies
+  the label text through a `::before` pseudo-element) instead of compressing every column into
+  an unreadably thin strip. Desktop behavior above the breakpoint is untouched. The virtualized
+  (>200 row) grid path is unaffected by this consult item -- it already uses its own grid
+  layout, not the compressing-columns table shape the finding was about.
+
   Row rendering is a separate leaf component (`DataRow.vue`) taking `row`/`columns` as props and
   emitting its own row-id on click, per the omega speed-reap sheet's Don't-do #2: no
   `@click="fn(row)"` inline closure bound inside this component's `v-for` -- `on-row-click`
@@ -36,6 +44,12 @@ export interface Column {
    * a column is clickable-to-sort only when this is set; omitted entirely for columns whose
    * meaning does not map to a single server column (e.g. `statement`). */
   sortKey?: string
+  /** true for a column whose value is free-authored ledger prose that may embed `row:<id>`
+   * citations (a `statement`/`title`/`resolution`-shaped column) -- DataRow.vue renders it
+   * through CitationText.vue instead of a plain interpolation. Never set for a column whose
+   * value is a plain scalar (id/kind/actor/ts/etc.); a rich-text render on a non-prose column
+   * would just cost a component mount for nothing to link. */
+  richText?: boolean
 }
 
 const props = withDefaults(
@@ -103,7 +117,7 @@ function isSuperseded(row: Record<string, unknown>): boolean {
     <p v-if="rows.length === 0" class="empty-note">{{ emptyText }}</p>
 
     <!-- small-N path: a plain native table, full accessibility, no windowing machinery -->
-    <table v-else-if="!shouldVirtualize">
+    <table v-else-if="!shouldVirtualize" class="stack-on-narrow">
       <thead>
         <tr>
           <th

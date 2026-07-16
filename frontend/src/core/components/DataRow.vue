@@ -8,6 +8,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Column } from './DataTable.vue'
+import CitationText from './CitationText.vue'
 
 const props = defineProps<{
   row: Record<string, unknown>
@@ -37,7 +38,10 @@ function handleClick(): void {
 
 <template>
   <tr v-if="!asGrid" :class="{ 'superseded-row': superseded }" @click="handleClick">
-    <td v-for="col in columns" :key="col.key" :class="{ mono: col.mono }">{{ cellText(col) }}</td>
+    <td v-for="col in columns" :key="col.key" :class="{ mono: col.mono }" :data-label="col.label">
+      <CitationText v-if="col.richText" :text="cellText(col)" />
+      <template v-else>{{ cellText(col) }}</template>
+    </td>
   </tr>
   <div
     v-else
@@ -48,7 +52,8 @@ function handleClick(): void {
     @click="handleClick"
   >
     <div v-for="col in columns" :key="col.key" class="vg-cell" :class="{ mono: col.mono }" role="cell">
-      {{ cellText(col) }}
+      <CitationText v-if="col.richText" :text="cellText(col)" />
+      <template v-else>{{ cellText(col) }}</template>
     </div>
   </div>
 </template>
