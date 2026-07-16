@@ -50,7 +50,22 @@ for (let i = 0; i < schedule.batches.length; i++) {
     return agent(spec.prompt, { phase: `batch-${i}`, label: id }).then(result => ({ id, result }))
   }))
 
-  batchResults.filter(Boolean).forEach(r => { results[r.id] = r.result })
+  // parallel()'s contract resolves a throwing/rejecting thunk to `null` rather than
+  // rejecting the whole call -- which means a missing spec (or any other per-job
+  // failure) would otherwise vanish silently here, and the cycle would proceed straight
+  // into the compliance review as if nothing were missing. Surface it instead: a batch
+  // with any failed job id aborts the whole workflow rather than continuing on a
+  // partial `results` set.
+  const failedIds = batch.filter((id, idx) => !batchResults[idx])
+  if (failedIds.length > 0) {
+    throw new Error(
+      `batch ${i + 1}/${schedule.batches.length} failed for job id(s): ${failedIds.join(', ')} ` +
+      '-- each of these threw or rejected inside parallel() (commonly: no spec provided for that ' +
+      'scheduled job id); aborting rather than silently continuing with a partial result set.'
+    )
+  }
+
+  batchResults.forEach(r => { results[r.id] = r.result })
 }
 
 // Countersign is a real gate, not decoration: a REJECT means the countersigner
