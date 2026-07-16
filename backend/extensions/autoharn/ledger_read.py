@@ -219,6 +219,26 @@ def question_status(cfg: PanelConfig) -> list[dict[str, Any]]:
     return [jsonable(r) for r in rows]
 
 
+def standing_decisions(cfg: PanelConfig) -> list[dict[str, Any]]:
+    """`standing_decisions` (kernel/lineage/s36-decision-grade.sql) -- every in-force
+    `decision`-kind row carrying a writer-supplied `grade`, currently 22+ live rows in this
+    deployment (cycle-4 audit finding 4, SERIOUS): real, kernel-supported governance state
+    (`./led standing`, `./pickup`'s own STANDING-DECISIONS section already surface it to a CLI
+    operator) that the SPA had no dedicated view for at all -- every decision row, durable or
+    not, rendered identically in Recent Ledger.
+
+    Same honest-narrow-columns shape as `review_gap`/`work_violations` above: the view itself
+    carries only `id, grade, statement` (a CURRENT-TRUTH reader factored through
+    `ledger_current`, per s36's own comment -- a row drops out the moment it leaves
+    ledger_current, e.g. superseded/retracted), no actor/ts of its own; the full `statement`
+    text is already in the payload (same as `findings_and_snags`), so the frontend needs no
+    second fetch to render it in full. Ordered by id, same convention as `review_gap`."""
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute("SELECT id, grade, statement FROM standing_decisions ORDER BY id")
+        rows = cur.fetchall()
+    return [jsonable(r) for r in rows]
+
+
 def ledger_row(cfg: PanelConfig, row_id: int) -> dict[str, Any] | None:
     with connect(cfg) as conn, conn.cursor() as cur:
         cur.execute(

@@ -18,6 +18,7 @@ import ReviewGapTab from './extensions/autoharn/components/ReviewGapTab.vue'
 import QuestionsTab from './extensions/autoharn/components/QuestionsTab.vue'
 import WorkViolationsTab from './extensions/autoharn/components/WorkViolationsTab.vue'
 import FindingsSnagsTab from './extensions/autoharn/components/FindingsSnagsTab.vue'
+import StandingDecisionsTab from './extensions/autoharn/components/StandingDecisionsTab.vue'
 import CommissionTab from './extensions/autoharn/components/CommissionTab.vue'
 import { TAB_PATHS } from './router'
 
@@ -45,6 +46,7 @@ type TabId =
   | 'questions'
   | 'work-violations'
   | 'findings-snags'
+  | 'standing-decisions'
   | 'commission'
 
 // row:557/cycle3-tab-url-routing: activeTab is now DERIVED from the URL (not its own ref) so
@@ -77,6 +79,7 @@ const autoharnTabs: { id: TabId; label: string }[] = [
   { id: 'questions', label: 'Questions' },
   { id: 'work-violations', label: 'Violations' },
   { id: 'findings-snags', label: 'Findings & snags' },
+  { id: 'standing-decisions', label: 'Standing decisions' },
 ]
 
 const visibleTabs = computed(() =>
@@ -143,6 +146,7 @@ onMounted(loadHealth)
       <QuestionsTab v-if="activeTab === 'questions'" />
       <WorkViolationsTab v-if="activeTab === 'work-violations'" />
       <FindingsSnagsTab v-if="activeTab === 'findings-snags'" />
+      <StandingDecisionsTab v-if="activeTab === 'standing-decisions'" />
     </template>
   </template>
   <RouterView v-else />
