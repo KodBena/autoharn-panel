@@ -23,7 +23,7 @@ const route = useRoute()
 const rowId = computed(() => {
   const raw = route.params.id
   const n = Number(Array.isArray(raw) ? raw[0] : raw)
-  return Number.isFinite(n) ? n : null
+  return Number.isInteger(n) && n > 0 ? n : null
 })
 
 const autoharnEnabled = computed(
