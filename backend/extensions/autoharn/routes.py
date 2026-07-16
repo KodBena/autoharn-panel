@@ -109,6 +109,34 @@ def api_work_violations(request: Request) -> list[dict[str, Any]]:
     return ledger_read.work_violations(cfg)
 
 
+def _obligation_node_wire(node: ledger_read.ObligationNode) -> dict[str, Any]:
+    return {
+        "slug": node.slug,
+        "title": node.title,
+        "kind": node.kind,
+        "discharge_state": node.discharge_state,
+        "state": node.state,
+        "effective_state": node.effective_state,
+        "resolution": node.resolution,
+        "children": [_obligation_node_wire(c) for c in node.children],
+    }
+
+
+@router.get("/api/obligation-tree/{slug}")
+def api_obligation_tree(request: Request, slug: str) -> dict[str, Any]:
+    """The obligation/dependency AND-tree (SPEC.md sec 2.3, P0; cycle-5 audit finding 1,
+    CRITICAL) rooted at `slug`, as a real recursive tree structure -- the backend half of
+    `obligation-tree-view`'s frontend graph render (row:841/845). 404s if `slug` was never
+    opened; a slug with no obligation-tree children still returns a valid one-node tree (its own
+    discharge state), same graceful-degradation posture as this extension's other per-slug
+    reads."""
+    cfg = request.app.state.panel.cfg
+    tree = ledger_read.obligation_tree(cfg, slug)
+    if tree is None:
+        raise HTTPException(status_code=404, detail=f"no work item {slug!r}")
+    return _obligation_node_wire(tree)
+
+
 @router.get("/api/findings-snags")
 def api_findings_snags(request: Request) -> list[dict[str, Any]]:
     cfg = request.app.state.panel.cfg
