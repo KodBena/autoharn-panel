@@ -62,10 +62,10 @@ export interface WorkItemRow {
   claimant_name: string | null
 }
 
-// review_gap / question_status: the live kernel views these routes select from (kernel/lineage
-// s15-schema.sql at the time of this port) do NOT carry statement/ts/actor_name -- the vanilla
-// PoC's app.js assumed they did (a stale assumption in that file, not reproduced here). Their
-// real, narrower columns:
+// review_gap: the live kernel view this route selects from (kernel/lineage s15-schema.sql at
+// the time of this port) does NOT carry statement/ts/actor_name -- the vanilla PoC's app.js
+// assumed it did (a stale assumption in that file, not reproduced here). Its real, narrower
+// columns:
 export interface ReviewGapRow {
   id: number // the ledger row (the statement) the countersign obligation is against
   actor: number // principal id owing the countersign -- NOT joined to a name by this view
@@ -73,12 +73,19 @@ export interface ReviewGapRow {
   assigned_by: number
 }
 
+// question_status: the kernel view itself carries only question_id/question_kind/answered/
+// first_answer_id/answers_target_not_a_question (same narrow-columns note as ReviewGapRow
+// above -- ts/actor_name are still absent). `statement` below is NOT one of the view's own
+// columns: backend/extensions/autoharn/ledger_read.py's question_status() joins it in from
+// ledger_current (cycle-4 audit finding 11, work item questions-inline-text) so the Questions
+// tab can show a snippet of the actual question text instead of a click-through.
 export interface QuestionRow {
   question_id: number
   question_kind: string
   answered: boolean
   first_answer_id: number | null
   answers_target_not_a_question: boolean
+  statement: string
 }
 
 export interface CosignRequest {

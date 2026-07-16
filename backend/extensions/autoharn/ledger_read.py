@@ -128,8 +128,24 @@ def review_gap(cfg: PanelConfig) -> list[dict[str, Any]]:
 
 
 def question_status(cfg: PanelConfig) -> list[dict[str, Any]]:
+    """`question_status` (the kernel view) plus each question row's own `statement` text, joined
+    in here from `ledger_current` rather than widening the kernel view itself -- that view ships
+    from autoharn's own kernel lineage SQL, applied once at --new-world scaffold time, and is not
+    owned by this repo (row:660's decision). `question_id` always resolves against
+    `ledger_current` because the view's own definition selects `question_id` FROM
+    `ledger_current` in the first place, so this join can never silently drop a row. Addresses
+    cycle-4 audit finding 11 (MINOR): the Questions tab's table showed no snippet of the actual
+    question TEXT, forcing a click-through just to learn what was asked (work item
+    questions-inline-text, row:633)."""
     with connect(cfg) as conn, conn.cursor() as cur:
-        cur.execute("SELECT * FROM question_status ORDER BY question_id")
+        cur.execute(
+            """
+            SELECT qs.*, l.statement
+            FROM question_status qs
+            JOIN ledger_current l ON l.id = qs.question_id
+            ORDER BY qs.question_id
+            """
+        )
         rows = cur.fetchall()
     return [jsonable(r) for r in rows]
 
