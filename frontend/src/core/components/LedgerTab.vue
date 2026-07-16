@@ -33,6 +33,7 @@ const kindFilter = ref('')
 // a scenario the "show superseded rows" toggle changes the *available kinds* for anyway.
 const kindOptions = ref<string[]>([])
 const actorFilter = ref('')
+const qFilter = ref('')
 const sinceFilter = ref('')
 const untilFilter = ref('')
 const limit = ref(200)
@@ -152,6 +153,7 @@ async function load(): Promise<void> {
           include_superseded: includeSuperseded.value,
           kind: kindFilter.value || undefined,
           actor: actorFilter.value || undefined,
+          q: qFilter.value || undefined,
           since: sinceFilter.value || undefined,
           until: untilFilter.value || undefined,
           sort_by: sortBy.value,
@@ -175,7 +177,7 @@ async function load(): Promise<void> {
 // filter that only has one page), so every filter/sort input resets `offset` before reloading.
 // Pagination (`goToNextPage`/`goToPrevPage`) is the only path that changes `offset` on purpose;
 // `offset` itself is watched separately below (last, or the reset here would fight the load).
-watch([includeSuperseded, kindFilter, actorFilter, sinceFilter, untilFilter, limit, sortBy, sortDir], () => {
+watch([includeSuperseded, kindFilter, actorFilter, qFilter, sinceFilter, untilFilter, limit, sortBy, sortDir], () => {
   offset.value = 0
   load()
 })
@@ -225,6 +227,14 @@ defineExpose({ reload: load })
       </select>
       <label for="actor-filter">actor:</label>
       <input id="actor-filter" v-model="actorFilter" type="text" placeholder="(any)" style="width: 8rem" />
+      <label for="q-filter">search:</label>
+      <input
+        id="q-filter"
+        v-model="qFilter"
+        type="text"
+        placeholder="statement text..."
+        style="width: 12rem"
+      />
       <label for="since-filter">since:</label>
       <input id="since-filter" v-model="sinceFilter" type="date" style="width: 9.5rem" />
       <label for="until-filter">until:</label>
