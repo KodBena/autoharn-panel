@@ -102,6 +102,12 @@ def api_work_violations(request: Request) -> list[dict[str, Any]]:
     return ledger_read.work_violations(cfg)
 
 
+@router.get("/api/findings-snags")
+def api_findings_snags(request: Request) -> list[dict[str, Any]]:
+    cfg = request.app.state.panel.cfg
+    return ledger_read.findings_and_snags(cfg)
+
+
 @router.get("/api/item/{row_id:int}/obligations")
 def api_item_obligations(request: Request, row_id: int) -> dict[str, Any]:
     """The item view's (SPEC.md sec 2.2) autoharn-semantic enrichment, fetched IN ADDITION to

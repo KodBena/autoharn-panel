@@ -101,6 +101,21 @@ export interface WorkViolationRow {
   target_id: number
 }
 
+// GET /api/findings-snags (extensions.autoharn.ledger_read.findings_and_snags): kind='finding'
+// or kind='snag' rows, the SAME id/kind/statement/actor_name/ts/stamp_verified shape
+// recent_ledger() returns (core.LedgerRow doesn't quite fit -- it has no stamp_verified field
+// and its `refs`/`supersedes` are absent from this narrower query), narrowed by kind. ONE
+// combined view for both kinds rather than two (row:704's decision) -- `kind` is still carried
+// per-row so the tab can render a distinguishing badge.
+export interface FindingSnagRow {
+  id: number
+  kind: 'finding' | 'snag'
+  statement: string
+  actor_name: string | null
+  ts: string | null
+  stamp_verified: boolean
+}
+
 export interface CosignRequest {
   row_id: number
   verdict: string

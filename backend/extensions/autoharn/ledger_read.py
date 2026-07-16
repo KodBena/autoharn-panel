@@ -151,6 +151,32 @@ def work_violations(cfg: PanelConfig) -> list[dict[str, Any]]:
     return [jsonable(r) for r in rows]
 
 
+def findings_and_snags(cfg: PanelConfig) -> list[dict[str, Any]]:
+    """`finding`/`snag` rows -- exactly the "recorded-defect/observation" prose content the
+    kernel's `Autoharn.idr` sum type already treats symmetrically with every other ledger kind,
+    but which (unlike `question`/`review_gap`) got no dedicated browsing surface of its own
+    before now (cycle-4 audit finding 8, MODERATE). ONE combined view, not two separate ones
+    (row:704's decision, made after reading this deployment's own live rows: 26 finding + 10
+    snag = 36 total at decision time -- modest, comparable volume that does not warrant doubling
+    the tab-bar footprint for two near-empty views); `kind` is still selected here so the
+    frontend can render a per-row badge distinguishing the two without a second query.
+
+    Same query shape as `recent_ledger` above (`ledger_current` LEFT JOIN `principal`, same
+    column list) narrowed by a `kind IN (...)` filter -- reusing that established pattern rather
+    than inventing a new one, per CLAUDE.md point 2's tool-reuse discipline."""
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT l.id, l.kind, l.statement, p.name AS actor_name, l.ts, l.stamp_verified
+            FROM ledger_current l LEFT JOIN principal p ON p.id = l.actor
+            WHERE l.kind IN ('finding', 'snag')
+            ORDER BY l.id DESC
+            """
+        )
+        rows = cur.fetchall()
+    return [jsonable(r) for r in rows]
+
+
 def question_status(cfg: PanelConfig) -> list[dict[str, Any]]:
     """`question_status` (the kernel view) plus each question row's own `statement` text, joined
     in here from `ledger_current` rather than widening the kernel view itself -- that view ships

@@ -28,6 +28,7 @@ export const TAB_PATHS = {
   'review-gap': '/review-gap',
   questions: '/questions',
   'work-violations': '/work-violations',
+  'findings-snags': '/findings-snags',
 } as const
 
 const routes: RouteRecordRaw[] = [
@@ -39,6 +40,7 @@ const routes: RouteRecordRaw[] = [
   { path: TAB_PATHS['review-gap'], component: RootPlaceholder },
   { path: TAB_PATHS.questions, component: RootPlaceholder },
   { path: TAB_PATHS['work-violations'], component: RootPlaceholder },
+  { path: TAB_PATHS['findings-snags'], component: RootPlaceholder },
   { path: '/item/:id', component: ItemView, props: true },
   // Catch-all: any path matching none of the above (cycle3-unknown-path-404 / consult finding
   // 4). Must stay LAST -- vue-router resolves routes in declaration order. App.vue's own
