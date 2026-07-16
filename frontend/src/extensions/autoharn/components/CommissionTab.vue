@@ -37,7 +37,7 @@ async function loadCommissions(): Promise<void> {
     // items yet, so the picker never has no selection.
     const withItems = commissions.value.filter((c) => c.item_count > 0)
     const preferred = withItems.length
-      ? withItems.reduce((latest, c) => (c.ts > latest.ts ? c : latest))
+      ? withItems.reduce((latest, c) => ((c.ts ?? '') > (latest.ts ?? '') ? c : latest))
       : commissions.value[0]
     selectedRow.value = preferred.row_id
   }
