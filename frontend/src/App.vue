@@ -1,13 +1,14 @@
 <!--
   src/App.vue -- composition root. Per the omega speed-reap sheet's Don't-do #4, this component
   must NOT read any high-frequency reactive value in its own render -- the only reactive reads
-  here are `activeTab` (a user-driven, low-frequency ref) and `healthState.health` (loaded once
-  at boot, not a streaming value). The live-updates `tick` ref is read only by each tab
+  here are `activeTab` (derived from the low-frequency route path, row:557) and
+  `healthState.health` (loaded once at boot, not a streaming value). The live-updates `tick` ref
+  is read only by each tab
   component itself (leaf-owns-its-read), never here.
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { healthState, loadHealth } from './core/state/health'
 import { useLiveUpdates } from './core/composables/useLiveUpdates'
 import LedgerTab from './core/components/LedgerTab.vue'
@@ -16,6 +17,7 @@ import WorkItemsTab from './extensions/autoharn/components/WorkItemsTab.vue'
 import ReviewGapTab from './extensions/autoharn/components/ReviewGapTab.vue'
 import QuestionsTab from './extensions/autoharn/components/QuestionsTab.vue'
 import CommissionTab from './extensions/autoharn/components/CommissionTab.vue'
+import { TAB_PATHS } from './router'
 
 const { status } = useLiveUpdates()
 
@@ -24,10 +26,23 @@ const { status } = useLiveUpdates()
 // linkable item view (SPEC.md sec 2.2) -- the six tabs below are otherwise byte-for-byte what
 // they were before routing existed, gated by `isItemRoute` rather than replaced.
 const route = useRoute()
+const router = useRouter()
 const isItemRoute = computed(() => route.path.startsWith('/item/'))
 
 type TabId = 'ledger' | 'profiles' | 'work' | 'review-gap' | 'questions' | 'commission'
-const activeTab = ref<TabId>('ledger')
+
+// row:557/cycle3-tab-url-routing: activeTab is now DERIVED from the URL (not its own ref) so
+// that switching tabs, reloading, bookmarking, or navigating directly to a tab's URL all agree
+// on which tab is showing -- the URL is the single source of truth, per the consult's finding 3.
+const pathToTab = new Map<string, TabId>(
+  (Object.entries(TAB_PATHS) as [TabId, string][]).map(([id, path]) => [path, id]),
+)
+const activeTab = computed<TabId>(() => pathToTab.get(route.path) ?? 'ledger')
+
+function selectTab(id: TabId) {
+  if (activeTab.value === id) return
+  router.push(TAB_PATHS[id])
+}
 
 const autoharnEnabled = computed(
   () => healthState.health?.extensions_enabled?.includes('autoharn') ?? false,
@@ -87,13 +102,15 @@ onMounted(loadHealth)
   </header>
 
   <template v-if="!isItemRoute">
-    <nav class="tabs">
+    <nav class="tabs" role="tablist">
       <button
         v-for="t in visibleTabs"
         :key="t.id"
         class="tab-btn"
         :class="{ active: activeTab === t.id }"
-        @click="activeTab = t.id"
+        role="tab"
+        :aria-selected="activeTab === t.id"
+        @click="selectTab(t.id)"
       >
         {{ t.label }}
       </button>
