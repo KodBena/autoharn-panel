@@ -352,6 +352,22 @@ tr.superseded-row td:first-child { border-left: 3px solid var(--border); }
     text-transform: uppercase;
     letter-spacing: 0.02em;
   }
+
+  /* cycle-5 audit finding 7 (MODERATE): .item-head's flex-wrap line-breaking is decided from
+   * each item's hypothetical (un-shrunk) main size -- .item-id/.badge use their own content
+   * width, so whether .item-label's 260px flex-basis still fits on that first line depends on
+   * incidental slug/badge text length. Two otherwise-identical sibling cards could disagree:
+   * a longer id+badge combo leaves < 260px free and forces .item-label onto its own full-width
+   * line (the "clean" case); a shorter one leaves >= 260px free, so .item-label gets pulled onto
+   * the SAME line and then flex-shrunk (min-width:0 permits this) into a narrow column beside a
+   * multi-line paragraph -- the reported cramped two-column glitch. Forcing flex-basis:100% here
+   * makes .item-label's own line always full-width and never content-dependent, so it always
+   * matches the clean case, regardless of slug/badge length. Scoped to this existing narrow-width
+   * breakpoint only -- above it there's room for id+badge+label+meta on one line and that desktop
+   * layout is intentionally left alone. */
+  .item-label {
+    flex-basis: 100%;
+  }
 }
 
 .empty-note { color: var(--text-dim); font-style: italic; padding: 0.4rem 0; }
