@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from core import backend_surface, ledger_read, profiles_write
+from core import profiles_write
 
 router = APIRouter()
 
@@ -49,12 +49,13 @@ def api_rows(
     offset: int = 0,
 ) -> list[dict[str, Any]]:
     """`since`/`until` are the date-range facet (SPEC.md sec 2.1), `sort_by`/`sort_dir` the
-    column-sort facet -- both passed straight through to `ledger_read.rows`, which owns their
+    column-sort facet -- both passed straight through to the reader's `rows`, which owns their
     validation (a closed `sort_by`/`sort_dir` vocabulary; an unrecognized value is a 400, not a
     silent fallback or an injectable identifier)."""
     cfg = request.app.state.panel.cfg
+    reader = request.app.state.panel.reader
     try:
-        return ledger_read.rows(
+        return reader.rows(
             cfg, kind=kind, actor_name=actor, q=q, since_id=since_id, since=since, until=until,
             include_superseded=include_superseded, sort_by=sort_by, sort_dir=sort_dir,
             limit=limit, offset=offset,
@@ -66,17 +67,18 @@ def api_rows(
 @router.get("/api/rows/facet-counts")
 def api_facet_counts(request: Request) -> dict[str, int]:
     cfg = request.app.state.panel.cfg
-    return ledger_read.facet_counts(cfg)
+    return request.app.state.panel.reader.facet_counts(cfg)
 
 
 @router.get("/api/rows/{row_id:int}")
 def api_row(request: Request, row_id: int) -> dict[str, Any]:
     cfg = request.app.state.panel.cfg
-    row = ledger_read.row_by_id(cfg, row_id)
+    reader = request.app.state.panel.reader
+    row = reader.row_by_id(cfg, row_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"no ledger row {row_id}")
-    chain = ledger_read.supersede_chain(cfg, row_id)
-    row["ref_row_ids"] = ledger_read.generic_row_refs(row.get("refs"))
+    chain = reader.supersede_chain(cfg, row_id)
+    row["ref_row_ids"] = reader.generic_row_refs(row.get("refs"))
     row["predecessors"] = list(chain.predecessors)
     row["successor"] = chain.successor
     return row
@@ -85,7 +87,7 @@ def api_row(request: Request, row_id: int) -> dict[str, Any]:
 @router.get("/api/watermark")
 def api_watermark(request: Request) -> dict[str, Any]:
     cfg = request.app.state.panel.cfg
-    return ledger_read.watermark(cfg)
+    return request.app.state.panel.reader.watermark(cfg)
 
 
 @router.get("/api/backend-surface")
@@ -93,11 +95,11 @@ def api_backend_surface(request: Request) -> list[dict[str, Any]]:
     """The deployment's actual DB surface (both configured schemas) cross-referenced against
     what this backend's own source actually queries (spa-backend-surface-view, commission
     row:741) -- CORE, mounted unconditionally (not autoharn-gated), since it depends only on
-    core-generic `PanelConfig` fields. See `core/backend_surface.py`'s own module docstring for
+    core-generic `PanelConfig` fields. See `core/ledger_adapter.py`'s own module docstring for
     the two-gap framing and the safety contract (never a relation's row content, only
     name/kind/count)."""
     cfg = request.app.state.panel.cfg
-    return backend_surface.backend_surface(cfg)
+    return request.app.state.panel.reader.backend_surface(cfg)
 
 
 _SSE_HEARTBEAT_INTERVAL_S = 20

@@ -1,13 +1,14 @@
 """backend.core.ports -- the CoreLedgerPort seam: one `typing.Protocol` covering the entire
-DB-touching public surface of `core/ledger_read.py` AND `core/backend_surface.py` (backend
-structural audit, docs/consults/2026-07-16-backend-structural-audit/2026-07-16-backend-structural-
-audit.md, finding 2/recommendation 1; ledger row 894/959; work item ledger-ports-protocols, row
-931). Interface only -- no adapter body lives here. A future `PostgresCoreLedgerReader` (a
-downstream work item, core-ledger-adapter) implements this Protocol by wrapping the existing
-module-level functions in `core/ledger_read.py`/`core/backend_surface.py` near-mechanically, SQL
-moved verbatim (ADR-0004 minimal-touch); a `FakeCoreLedgerReader` (core-ledger-fake) implements it
-in-memory for tests. Route handlers depend on this Protocol type, never on a concrete module
-import (ADR-0012 P2 seam/port discipline).
+DB-touching public surface that USED TO live as module-level functions across `core/ledger_read.py`
+AND `core/backend_surface.py` (backend structural audit, docs/consults/2026-07-16-backend-
+structural-audit/2026-07-16-backend-structural-audit.md, finding 2/recommendation 1; ledger row
+894/959; work item ledger-ports-protocols, row 931). Interface only -- no adapter body lives here.
+`PostgresCoreLedgerReader` (work item core-ledger-adapter, row 933) now IS the sole implementation
+of this Protocol, at `core/ledger_adapter.py` -- both `core/ledger_read.py` and
+`core/backend_surface.py` are gone, their SQL relocated verbatim into that one class (ADR-0004
+minimal-touch); a `FakeCoreLedgerReader` (core-ledger-fake) implements it in-memory for tests.
+Route handlers depend on this Protocol type, never on a concrete module import (ADR-0012 P2
+seam/port discipline).
 
 ENFORCEMENT MECHANISM (the omega precedent -- docs/omega-observatory/2026-07-15-structural-reap.md
 entry 2, `backend/repositories/ports.py`'s own documented technique in the maintainer's private
@@ -18,15 +19,17 @@ from `psycopg`, nothing from this project's `db` module. A reviewer (or a script
 boundary holds by grepping this file's import block; no framework, no DI container, is needed to
 assert it.
 
-DATACLASS DUPLICATION (disclosed, not hidden -- ledger row 979): `SupersedeChain` below is a
-field-for-field copy of `core/ledger_read.py`'s own `SupersedeChain`, not an import of it --
-importing it would mean importing `core.ledger_read`, which imports `db`, which imports `psycopg`,
-defeating the import-boundary this file exists to hold. This Protocol's own copy is the frozen
-CONTRACT shape; a downstream item is expected to make one location canonical and have the other
-alias/import it, collapsing the duplication once the adapter exists.
+DATACLASS DUPLICATION -- COLLAPSED (was disclosed at ledger row 979, resolved at row 933): this was
+originally a field-for-field copy of `core/ledger_read.py`'s own `SupersedeChain`, kept separate
+because importing that module would have meant importing `db`, which imports `psycopg`, defeating
+the import-boundary this file exists to hold. `core-ledger-adapter` (row 933) did exactly what this
+note originally invited: `core/ledger_read.py` is gone, and `SupersedeChain` below is now the ONE
+canonical definition -- `core/ledger_adapter.py`'s `PostgresCoreLedgerReader.supersede_chain`
+imports it directly from here rather than carrying its own copy.
 
-SIGNATURE NOTE -- `relation_count` (ledger row 980): `core/backend_surface.py`'s private
-`_relation_count(cur: Cursor, schema, name, relkind, reltuples)` takes a live `psycopg.Cursor` as
+SIGNATURE NOTE -- `relation_count` (ledger row 980): `core/ledger_adapter.py`'s private
+`_count_relation(cur: Cursor, schema, name, relkind, reltuples)` (formerly `core/backend_surface.py`'s
+`_relation_count`, before that file was deleted at row 933) takes a live `psycopg.Cursor` as
 its first argument -- unrepresentable here under the import ban above. This Protocol states the
 CONTRACT (count a relation, given the config to reach it), not the transaction-plumbing choice of
 any one concrete adapter, so the first parameter is `cfg: PanelConfig` instead, matching every
@@ -43,28 +46,30 @@ from config import PanelConfig
 
 @dataclass(frozen=True)
 class SupersedeChain:
-    """One row's supersede chain, both directions -- mirrors `core/ledger_read.py`'s own
-    `SupersedeChain` field-for-field (see this module's docstring on why it is a copy, not an
-    import). `predecessors` walks `supersedes` back to the root (oldest first); `successor` is the
-    row (if any) whose OWN `supersedes` points at this one."""
+    """One row's supersede chain, both directions -- the ONE canonical definition (see this
+    module's docstring, DATACLASS DUPLICATION section, on the now-collapsed former copy in the
+    since-deleted `core/ledger_read.py`). `predecessors` walks `supersedes` back to the root
+    (oldest first); `successor` is the row (if any) whose OWN `supersedes` points at this one."""
     row_id: int
     predecessors: tuple[int, ...]
     successor: int | None
 
 
 class CoreLedgerPort(Protocol):
-    """The DB-touching public surface of `core/ledger_read.py` and `core/backend_surface.py`, as
-    one seam (`ledger-ports-protocols`'s own "2 Protocols, not 6" mandate -- one per existing
-    core/autoharn extension boundary, SPEC.md sec 4 -- folds `backend_surface.py`'s functions in
-    here rather than minting a 3rd Protocol, per ledger row 925). Every method below takes
-    `cfg: PanelConfig` as its own connection/config handle, exactly as the module-level functions
-    it mirrors do today; a conforming adapter/fake needs no other shared state.
+    """The DB-touching public surface that USED TO be split across `core/ledger_read.py` and
+    `core/backend_surface.py` (both deleted at `core-ledger-adapter`, row 933 -- their SQL now
+    lives in `core/ledger_adapter.py`'s `PostgresCoreLedgerReader`, this Protocol's sole
+    implementation), as one seam (`ledger-ports-protocols`'s own "2 Protocols, not 6" mandate --
+    one per existing core/autoharn extension boundary, SPEC.md sec 4 -- folds `backend_surface.py`'s
+    former functions in here rather than minting a 3rd Protocol, per ledger row 925). Every method
+    below takes `cfg: PanelConfig` as its own connection/config handle, exactly as
+    `PostgresCoreLedgerReader`'s methods do; a conforming adapter/fake needs no other shared state.
 
-    `core/ledger_read.py`'s `generic_row_refs` is the one PURE, no-I/O function folded in anyway
-    (ledger row 925): the audit's own 7-method list named it explicitly alongside the six
-    DB-touching reads, so it is treated as this Protocol's contract surface rather than left a
-    bare module function -- unlike `extensions/autoharn/ports.py`'s `parse_item_refs`/
-    `parse_witness_refs`/`parse_resource_fields`, which stay plain functions with no antecedent
+    `generic_row_refs` is the one PURE, no-I/O method folded in anyway (ledger row 925): the
+    audit's own 7-method list named it explicitly alongside the six DB-touching reads, so it is
+    treated as this Protocol's contract surface rather than left a bare module function -- unlike
+    `extensions/autoharn/ports.py`'s `parse_item_refs`/`parse_witness_refs`/`parse_resource_fields`,
+    which stay plain functions with no antecedent
     licensing their inclusion here.
     """
 
@@ -152,7 +157,7 @@ class CoreLedgerPort(Protocol):
         exact count (Postgres keeps no `reltuples` statistic for a relation with no storage of its
         own); a base table/matview whose own `reltuples` ESTIMATE already clears the adapter's
         exact-count threshold skips the exact `count(*)` entirely and reports `estimated=True`.
-        SIGNATURE NOTE: mirrors `core/backend_surface.py`'s private `_relation_count` in every
+        SIGNATURE NOTE: mirrors `core/ledger_adapter.py`'s private `_count_relation` in every
         respect except its first parameter -- `cfg: PanelConfig` here instead of a live
         `psycopg.Cursor`, since a `Cursor` type cannot appear in this file under the import-boundary
         rule this module's own docstring states (ledger row 980)."""

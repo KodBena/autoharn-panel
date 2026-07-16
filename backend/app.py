@@ -20,7 +20,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from config import PanelConfig, load_config
-from core import ledger_read as core_ledger_read
+from core.ledger_adapter import PostgresCoreLedgerReader
+from core.ports import CoreLedgerPort
 from core.routes import build_profiles_write_router, router as core_router
 
 # Every extension this repo SHIPS is imported unconditionally, top-of-file, like every other
@@ -64,18 +65,23 @@ class Broadcaster:
 class AppState:
     def __init__(self, cfg: PanelConfig) -> None:
         self.cfg = cfg
+        # CoreLedgerPort-typed, constructed once at startup (core-ledger-adapter, row 933) --
+        # every core route pulls this off `request.app.state.panel.reader` instead of importing
+        # `core.ledger_read`/`core.backend_surface` as modules (both deleted; their SQL now lives
+        # in `core.ledger_adapter.PostgresCoreLedgerReader`, this Protocol's sole implementation).
+        self.reader: CoreLedgerPort = PostgresCoreLedgerReader()
         self.broadcaster = Broadcaster()
         self.poll_task: asyncio.Task | None = None
 
 
 async def _poll_loop(state: AppState) -> None:
     """The ONE background task polling the ledger's watermark every `cfg.poll_interval` --
-    core-generic (`core.ledger_read.watermark`), so this loop runs identically whether or not
-    any extension is enabled."""
+    core-generic (`state.reader.watermark`, the same `CoreLedgerPort`-typed reader every route
+    handler uses), so this loop runs identically whether or not any extension is enabled."""
     last: dict[str, Any] | None = None
     while True:
         try:
-            wm = await asyncio.to_thread(core_ledger_read.watermark, state.cfg)
+            wm = await asyncio.to_thread(state.reader.watermark, state.cfg)
         except Exception:  # noqa: BLE001 -- a transient DB hiccup must not kill the poller
             await asyncio.sleep(state.cfg.poll_interval)
             continue

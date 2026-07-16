@@ -8,7 +8,7 @@ proof it does not.
 
 The bare schema below is NOT autoharn's kernel lineage (kernel/lineage/s15-schema.sql etc,
 which this standalone repo does not depend on or ship) -- it is the minimal, generic subset
-`backend/core/ledger_read.py` itself requires: a `ledger` table with
+`backend/core/ledger_adapter.py`'s `PostgresCoreLedgerReader` itself requires: a `ledger` table with
 (id, ts, kind, statement, refs, supersedes, actor) and a `principal(id, name)` table, no CHECK
 constraint narrowing `kind`, no distinct subject role (this test also exercises `db.connect`'s
 role-skip branch: `cfg.role = None`).
