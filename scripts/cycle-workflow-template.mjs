@@ -1,6 +1,6 @@
 export const meta = {
   name: 'consult-cycle-workflow',
-  description: 'Execute one fix-point consult cycle: topologically-batched implementation phases (from a precomputed makespan-scheduler schedule), then a single whole-diff ADR-00{00,12,13} compliance review, countersigned by an independent auditor.',
+  description: 'Execute one fix-point consult cycle: topologically-batched implementation phases (from a precomputed makespan-scheduler schedule), then a whole-diff ADR-00{00,12,13} compliance review with a bounded review<->countersign convergence loop (max 2 rounds, non-convergence escalates).',
   phases: [
     { title: 'implement' },
     { title: 'compliance-review' },
@@ -53,8 +53,58 @@ for (let i = 0; i < schedule.batches.length; i++) {
   batchResults.filter(Boolean).forEach(r => { results[r.id] = r.result })
 }
 
-phase('compliance-review')
-const complianceReview = await agent(`Working directory: ${repoRoot}. Run 'git diff' and 'git log' yourself to see EVERY change made across this entire cycle -- do not scope your review to a single file or a single work item, read the whole cycle's diff.
+// Countersign is a real gate, not decoration: a REJECT means the countersigner
+// disagrees with the review's overall verdict, which only makes sense if refusal
+// can actually trigger a redo. Bounded exactly like ADR-0017's A:B:C loop --
+// max 2 review<->countersign rounds, non-convergence escalates for the orchestrator
+// to adjudicate, never a silent 3rd automated round. Each agent() call is a fresh,
+// memoryless instance, so "off-hands" convergence requires explicitly serializing
+// every prior round's review + countersign text into the next round's prompt --
+// there is no shared conversation to lean on.
+const MAX_COMPLIANCE_ROUNDS = 2
+
+const REVIEW_SCHEMA = {
+  type: 'object',
+  properties: {
+    adr_0000: { type: 'string', description: 'Type-driven-design verdict and findings, including any cross-item refactor implication' },
+    adr_0012: { type: 'string' },
+    adr_0013: { type: 'string', description: 'Execution-integrity verdict: scope-shrinking or self-audit findings, if any' },
+    violations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          file: { type: 'string' },
+          line: { type: 'number' },
+          description: { type: 'string' },
+        },
+        required: ['file', 'description'],
+      },
+    },
+    refactor_warranted: { type: 'boolean' },
+    refactor_description: { type: 'string' },
+  },
+  required: ['adr_0000', 'adr_0012', 'adr_0013', 'violations', 'refactor_warranted'],
+}
+
+const COUNTERSIGN_SCHEMA = {
+  type: 'object',
+  properties: {
+    verdict: { type: 'string', enum: ['CONFIRM', 'CONFIRM_WITH_CORRECTIONS', 'REJECT'] },
+    corrections: { type: 'array', items: { type: 'string' } },
+    rationale: { type: 'string' },
+  },
+  required: ['verdict', 'rationale'],
+}
+
+function reviewPrompt(round, priorRounds) {
+  const history = priorRounds.length === 0 ? '' : `
+
+THIS IS ROUND ${round}. An earlier review of this same diff was REJECTED by an independent countersigner -- read exactly why below and produce a genuinely revised review that addresses it, not a repeat of the same pass. Every prior round is included in full so you aren't redoing blind work the first attempt already covered.
+
+${priorRounds.map((r, idx) => `--- ROUND ${idx + 1} REVIEW ---\n${JSON.stringify(r.review, null, 2)}\n--- ROUND ${idx + 1} COUNTERSIGN (verdict: ${r.countersign.verdict}) ---\n${r.countersign.rationale}${r.countersign.corrections?.length ? '\nCorrections named:\n- ' + r.countersign.corrections.join('\n- ') : ''}`).join('\n\n')}`
+
+  return `Working directory: ${repoRoot}. Run 'git diff' and 'git log' yourself to see EVERY change made across this entire cycle -- do not scope your review to a single file or a single work item, read the whole cycle's diff.
 
 Read these ADRs in full before judging anything, for their spirit, not just their letter: ${adrPaths.join(', ')}.
 
@@ -63,17 +113,56 @@ Review the cycle's ENTIRE diff for compliance with those ADRs:
 - ADR-0012: apply as written.
 - ADR-0013 (execution integrity): confirm no item in this cycle shrank its own scope for feasibility reasons dressed as a design decision, and that no item self-audited its own work in place of an independent check.
 
-Report: a per-ADR verdict, every violation found (cite exact file:line, quoting the offending code), and -- if and only if you believe a refactor is now warranted per ADR-0000 -- say so explicitly, name concretely what it would change, but do NOT implement it and do NOT assume the current dependency graph still holds. Flag it plainly as requiring re-scheduling by the orchestrator, since new precedence edges are a load-bearing decision, not something this review pass gets to decide unilaterally.`, { phase: 'compliance-review', label: 'sonnet-compliance-review' })
+Report a per-ADR verdict, every violation found (cite exact file:line, quoting the offending code), and -- if and only if you believe a refactor is now warranted per ADR-0000 -- say so explicitly via refactor_warranted/refactor_description, naming concretely what it would change. Do NOT implement it and do NOT assume the current dependency graph still holds -- that is flagged for the orchestrator to re-schedule, since new precedence edges are a load-bearing decision this review pass does not get to make unilaterally.${history}`
+}
 
-phase('compliance-countersign')
-const countersign = await agent(`Working directory: ${repoRoot}. A colleague (a different Sonnet instance) just produced the ADR-00{00,12,13} compliance review below, covering this entire cycle's diff in one pass.
+function countersignPrompt(round, review, priorRounds) {
+  const history = priorRounds.length === 0 ? '' : `
 
-Your job is NOT to re-review the code from scratch. It is to AUDIT THE REVIEW ITSELF for misattribution and error -- a single reviewer covering a whole cycle's diff in one pass can miscite a line, attribute a finding to the wrong file, overstate or understate a violation's severity, or simply miss something the diff plainly shows. Independently re-run 'git diff'/'git log' yourself and check, claim by claim: does every citation actually match what the diff currently shows? Is the refactor-warranted verdict (if the review made one) actually supported by what you see, or is it invented, or wrongly omitted?
+Prior rounds, for context on what has already been rejected and why -- judge THIS round's review on its own merits against the diff, don't just check whether it differs from the past:
 
-Report your own independent verdict: CONFIRM (the review is accurate as written), CONFIRM WITH CORRECTIONS (list precisely what was mis-cited, misattributed, or missed), or REJECT (the review's overall verdict is wrong -- say why, citing the diff yourself).
+${priorRounds.map((r, idx) => `--- ROUND ${idx + 1} COUNTERSIGN (verdict: ${r.countersign.verdict}) ---\n${r.countersign.rationale}`).join('\n\n')}`
+
+  return `Working directory: ${repoRoot}. A colleague (a different Sonnet instance) just produced the ADR-00{00,12,13} compliance review below (round ${round}), covering this entire cycle's diff in one pass.
+
+Your job is NOT to re-review the code from scratch. It is to AUDIT THE REVIEW ITSELF for misattribution and error -- a single reviewer covering a whole cycle's diff in one pass can miscite a line, attribute a finding to the wrong file, overstate or understate a violation's severity, or simply miss something the diff plainly shows. Independently re-run 'git diff'/'git log' yourself and check, claim by claim: does every citation actually match what the diff currently shows? Is refactor_warranted (if true) actually supported by what you see, or is it invented, or wrongly omitted when it should be true?
+
+Report your own independent verdict: CONFIRM (the review is accurate as written), CONFIRM_WITH_CORRECTIONS (list precisely what was mis-cited, misattributed, or missed, in "corrections"), or REJECT (the review's overall verdict is wrong -- say why, citing the diff yourself, in "rationale").${history}
 
 THE REVIEW TO AUDIT:
 
-${complianceReview}`, { phase: 'compliance-countersign', label: 'sonnet-countersign' })
+${JSON.stringify(review, null, 2)}`
+}
 
-return { results, complianceReview, countersign }
+const complianceRounds = []
+let round = 1
+while (true) {
+  phase('compliance-review')
+  const review = await agent(reviewPrompt(round, complianceRounds), {
+    phase: 'compliance-review',
+    label: `sonnet-compliance-review-r${round}`,
+    schema: REVIEW_SCHEMA,
+  })
+
+  phase('compliance-countersign')
+  const countersign = await agent(countersignPrompt(round, review, complianceRounds), {
+    phase: 'compliance-countersign',
+    label: `sonnet-countersign-r${round}`,
+    schema: COUNTERSIGN_SCHEMA,
+  })
+
+  complianceRounds.push({ review, countersign })
+  log(`compliance round ${round}: countersign verdict = ${countersign.verdict}`)
+
+  if (countersign.verdict !== 'REJECT') break
+  if (round >= MAX_COMPLIANCE_ROUNDS) {
+    log(`compliance review did NOT converge after ${MAX_COMPLIANCE_ROUNDS} rounds -- stopping, not looping further; this escalates to the orchestrator to adjudicate rather than a silent 3rd automated round`)
+    break
+  }
+  round++
+}
+
+const finalRound = complianceRounds[complianceRounds.length - 1]
+const converged = finalRound.countersign.verdict !== 'REJECT'
+
+return { results, complianceRounds, converged, finalReview: finalRound.review, finalCountersign: finalRound.countersign }
