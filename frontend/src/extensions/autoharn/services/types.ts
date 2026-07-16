@@ -214,3 +214,28 @@ export interface ItemObligations {
   witnesses: Witness[]
   resource_fields: ResourceFields | null
 }
+
+// GET /api/obligation-tree/{slug} (extensions.autoharn.ledger_read.obligation_tree, commit
+// 9b20033; row_id field added by obligation-tree-view, row:908/909's decision): the obligation/
+// dependency AND-tree rooted at a work-item slug, as a real recursive tree -- SPEC.md sec 2.3's
+// "obligation-tree graph view", cycle-5 audit finding 1 (CRITICAL). A DAG diamond (a slug
+// reachable via more than one path) renders as more than one `ObligationNode` instance in the
+// tree, per the backend's own header comment on `obligation_tree()` -- the standard, harmless way
+// to render a DAG as a tree; this frontend does not attempt to de-duplicate those instances.
+export type ObligationDischargeState = 'undischarged' | 'discharged' | 'ambiguous-partial' | 'superseded'
+export type ObligationNodeKind = 'composite' | 'leaf'
+
+export interface ObligationNode {
+  slug: string
+  title: string | null
+  kind: ObligationNodeKind
+  discharge_state: ObligationDischargeState
+  state: string
+  effective_state: string
+  resolution: string | null
+  // This slug's own `work_opened` ledger row id -- the item-view click target (`/item/<row_id>`).
+  // null only for the should-be-unreachable stub case the backend's own `obligation_tree()`
+  // documents (an edge reaching a slug with no `work_item_current` row at all).
+  row_id: number | null
+  children: ObligationNode[]
+}

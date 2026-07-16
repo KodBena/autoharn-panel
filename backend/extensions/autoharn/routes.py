@@ -118,6 +118,10 @@ def _obligation_node_wire(node: ledger_read.ObligationNode) -> dict[str, Any]:
         "state": node.state,
         "effective_state": node.effective_state,
         "resolution": node.resolution,
+        # this slug's own work_opened row id -- obligation-tree-view's item-view click target
+        # (row:846 acceptance criterion 3; row:909's decision on why this lives here rather than
+        # a second lookup route). None only for the should-be-unreachable stub case.
+        "row_id": node.row_id,
         "children": [_obligation_node_wire(c) for c in node.children],
     }
 

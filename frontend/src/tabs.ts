@@ -27,6 +27,7 @@ import QuestionsTab from './extensions/autoharn/components/QuestionsTab.vue'
 import WorkViolationsTab from './extensions/autoharn/components/WorkViolationsTab.vue'
 import FindingsSnagsTab from './extensions/autoharn/components/FindingsSnagsTab.vue'
 import StandingDecisionsTab from './extensions/autoharn/components/StandingDecisionsTab.vue'
+import ObligationTreeTab from './extensions/autoharn/components/ObligationTreeTab.vue'
 
 export interface TabDef {
   id: string
@@ -47,6 +48,7 @@ export const TAB_DEFS = [
   { id: 'backend-surface', path: '/backend-surface', label: 'Backend surface', component: BackendSurfaceTab, core: true },
   { id: 'commission', path: '/commissions', label: 'Commission decomposition', component: CommissionTab, core: false },
   { id: 'work', path: '/work-items', label: 'Work items', component: WorkItemsTab, core: false },
+  { id: 'obligation-tree', path: '/obligation-tree', label: 'Obligation tree', component: ObligationTreeTab, core: false },
   { id: 'review-gap', path: '/review-gap', label: 'Review gap', component: ReviewGapTab, core: false },
   { id: 'questions', path: '/questions', label: 'Questions', component: QuestionsTab, core: false },
   { id: 'work-violations', path: '/work-violations', label: 'Violations', component: WorkViolationsTab, core: false },

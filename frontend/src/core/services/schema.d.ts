@@ -279,6 +279,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/obligation-tree/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Obligation Tree
+         * @description The obligation/dependency AND-tree (SPEC.md sec 2.3, P0; cycle-5 audit finding 1,
+         *     CRITICAL) rooted at `slug`, as a real recursive tree structure -- the backend half of
+         *     `obligation-tree-view`'s frontend graph render (row:841/845). 404s if `slug` was never
+         *     opened; a slug with no obligation-tree children still returns a valid one-node tree (its own
+         *     discharge state), same graceful-degradation posture as this extension's other per-slug
+         *     reads.
+         */
+        get: operations["api_obligation_tree_api_obligation_tree__slug__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/findings-snags": {
         parameters: {
             query?: never;
@@ -755,6 +780,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+        };
+    };
+    api_obligation_tree_api_obligation_tree__slug__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

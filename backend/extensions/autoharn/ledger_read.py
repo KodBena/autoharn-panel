@@ -237,6 +237,29 @@ def _work_items_by_slug(cfg: PanelConfig) -> dict[str, dict[str, Any]]:
     return {r["slug"]: r for r in rows}
 
 
+def _work_opened_row_ids(cfg: PanelConfig) -> dict[str, int]:
+    """`work_slug -> its own kind='work_opened' ledger row id`, one query for the whole tree build
+    (same one-query-not-per-node shape as `_work_items_by_slug` above) -- the obligation tree's
+    click-to-item-view target (obligation-tree-view, row:846 acceptance criterion 3), which the
+    tree's own wire otherwise has no way to name: `ObligationNode` carries slug/title/state, not
+    the ledger row that opened it. Mirrors `work_item()`'s existing `closed_row_id` sub-query
+    (same file, above) but for the OPENING act rather than the closing one, and reads every slug
+    at once rather than one row_id per slug (this one runs once per tree build, not once per
+    node). A slug's `work_opened` row is unique by kernel construction (the opening trigger
+    refuses a second open for the same slug, s29-pre-amendment.sql:390-391) -- `ORDER BY id` plus
+    dict-building keeps the first (only) match if that invariant is ever violated, same
+    defense-in-depth posture `obligation_tree`'s own `visiting` guard already takes."""
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT work_slug, id FROM ledger_current WHERE kind = 'work_opened' ORDER BY id"
+        )
+        rows = cur.fetchall()
+    out: dict[str, int] = {}
+    for r in rows:
+        out.setdefault(r["work_slug"], r["id"])
+    return out
+
+
 def _work_obligation_adjacency(cfg: PanelConfig) -> dict[str, list[str]]:
     """`from_slug -> [to_slug, ...]` off `work_edge_obligation` (s32's single home of the
     IN-FORCE obligation-tree union: s28 parent edges + s30 blocks-close edges, already unioned
@@ -328,6 +351,10 @@ class ObligationNode:
     state: str
     effective_state: str
     resolution: str | None
+    row_id: int | None  # this slug's own work_opened row id -- the frontend's item-view click
+    # target (obligation-tree-view, row:846 acceptance criterion 3); None only for the
+    # should-be-unreachable stub case below (an edge reaching a slug with no work_item_current row
+    # at all has no work_opened row to point at either).
     children: tuple["ObligationNode", ...]
 
 
@@ -352,16 +379,19 @@ def obligation_tree(cfg: PanelConfig, root_slug: str) -> ObligationNode | None:
     composite_slugs = _work_composite_slugs(cfg)
     deferred_slugs = _work_deferred_undischarged_slugs(cfg)
     tree_defeated_slugs = _work_tree_defeated_slugs(cfg)
+    opened_row_ids = _work_opened_row_ids(cfg)
 
     def build(slug: str, visiting: frozenset[str]) -> ObligationNode:
         row = items.get(slug)
+        row_id = opened_row_ids.get(slug)
         if row is None:
             # An edge reaches a slug with no work_item_current row -- should be unreachable
             # (every kind='work_opened' row IS a work_item_current row by construction), but
             # degrades to an honest stub rather than a KeyError if the graph and the projection
             # ever disagree.
             return ObligationNode(slug=slug, title=None, kind="leaf", discharge_state="undischarged",
-                                   state="open", effective_state="open", resolution=None, children=())
+                                   state="open", effective_state="open", resolution=None,
+                                   row_id=row_id, children=())
         state = row["state"]
         effective_state = row["effective_state"]
         resolution = row["resolution"]
@@ -374,11 +404,12 @@ def obligation_tree(cfg: PanelConfig, root_slug: str) -> ObligationNode | None:
         if slug in visiting:
             return ObligationNode(slug=slug, title=row["title"], kind=kind,
                                    discharge_state=discharge_state, state=state,
-                                   effective_state=effective_state, resolution=resolution, children=())
+                                   effective_state=effective_state, resolution=resolution,
+                                   row_id=row_id, children=())
         children = tuple(build(child, visiting | {slug}) for child in adjacency.get(slug, []))
         return ObligationNode(slug=slug, title=row["title"], kind=kind, discharge_state=discharge_state,
                                state=state, effective_state=effective_state, resolution=resolution,
-                               children=children)
+                               row_id=row_id, children=children)
 
     return build(root_slug, frozenset())
 
