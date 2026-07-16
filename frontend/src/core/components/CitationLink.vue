@@ -8,9 +8,22 @@
   Not rendered standalone -- CitationText.vue is the entry point every statement-rendering
   caller uses; this is its one-citation leaf, split out so CitationText's segment loop stays a
   plain v-for over plain-text-or-CitationLink, no inline hover-state logic duplicated per segment.
+
+  The card is `<Teleport to="body">`d and positioned with `position: fixed` (viewport coordinates,
+  same space `getBoundingClientRect()` returns) instead of `position: absolute` inside this span's
+  own inline-flow ancestor. Root cause this works around (citation-hover-preview investigation,
+  cycle-4 audit finding 9): DataTable.vue's >200-row windowed path renders rows inside
+  `.virtual-viewport`, which sets `overflow-y: auto` (required for the windowing itself) -- any
+  descendant popping upward past that ancestor's own top edge is clipped from view even though the
+  DOM node exists and mounts correctly (a shallow visibility check, e.g. Playwright's `isVisible()`,
+  does not catch this: it does not test ancestor scroll-clipping). The plain small-N `<table>` path
+  never actually clipped (its `.scroll-x` wrapper has no fixed height), which is why the bug reads
+  as "the feature is fully implemented and works" on casual reading/small-N testing, yet a reader
+  scrolled into a large virtualized list sees nothing. Teleporting escapes every scroll-clipping
+  ancestor unconditionally, so this fix is not narrowly scoped to the virtualized path alone.
 -->
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, nextTick } from 'vue'
 import { useRowSynopsis } from '../composables/useRowSynopsis'
 import { truncate } from '../../utils/format'
 
@@ -18,10 +31,32 @@ const props = defineProps<{ rowId: number }>()
 
 const { ensureLoaded, get } = useRowSynopsis()
 const hovering = ref(false)
+const wrapEl = ref<HTMLElement | null>(null)
+
+const CARD_MAX_WIDTH = 352 // px -- matches this file's own `max-width: 22rem` at a 16px root font
+const MIN_SPACE_ABOVE = 140 // px -- rough floor for the card's own rendered height
+
+const cardTop = ref(0)
+const cardLeft = ref(0)
+const openDown = ref(false)
+
+// Computed once per hover (not tracked continuously against scroll/resize) -- this is a
+// transient, mouseleave-dismissed tooltip, same lightweight-on-purpose shape as the rest of this
+// component; re-deriving position continuously would be tracking state no other hover affordance
+// in this app maintains.
+function positionCard(): void {
+  const el = wrapEl.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  openDown.value = rect.top < MIN_SPACE_ABOVE
+  cardTop.value = openDown.value ? rect.bottom + 4 : rect.top - 4
+  cardLeft.value = Math.max(8, Math.min(rect.left, window.innerWidth - CARD_MAX_WIDTH - 8))
+}
 
 function onHover(): void {
   hovering.value = true
   ensureLoaded(props.rowId)
+  nextTick(positionCard)
 }
 function onLeave(): void {
   hovering.value = false
@@ -45,18 +80,26 @@ function ageOf(ts: string | null | undefined): string {
 </script>
 
 <template>
-  <span class="citation-wrap" @mouseenter="onHover" @mouseleave="onLeave">
+  <span ref="wrapEl" class="citation-wrap" @mouseenter="onHover" @mouseleave="onLeave">
     <router-link :to="`/item/${rowId}`" class="citation-link" @click.stop>row:{{ rowId }}</router-link>
-    <div v-if="hovering" class="citation-card" role="tooltip">
-      <template v-if="entry === undefined || entry === 'loading'">loading row:{{ rowId }}…</template>
-      <template v-else-if="entry === 'error'">could not load row:{{ rowId }}</template>
-      <template v-else>
-        <div class="citation-card-head">
-          #{{ entry.id }} · {{ entry.kind }} · {{ entry.actor_name || '(unknown actor)' }} · {{ ageOf(entry.ts) }}
-        </div>
-        <div class="citation-card-body">{{ truncate(entry.statement, 220) }}</div>
-      </template>
-    </div>
+    <Teleport to="body">
+      <div
+        v-if="hovering"
+        class="citation-card"
+        :class="{ 'citation-card--down': openDown }"
+        role="tooltip"
+        :style="{ top: cardTop + 'px', left: cardLeft + 'px' }"
+      >
+        <template v-if="entry === undefined || entry === 'loading'">loading row:{{ rowId }}…</template>
+        <template v-else-if="entry === 'error'">could not load row:{{ rowId }}</template>
+        <template v-else>
+          <div class="citation-card-head">
+            #{{ entry.id }} · {{ entry.kind }} · {{ entry.actor_name || '(unknown actor)' }} · {{ ageOf(entry.ts) }}
+          </div>
+          <div class="citation-card-body">{{ truncate(entry.statement, 220) }}</div>
+        </template>
+      </div>
+    </Teleport>
   </span>
 </template>
 
@@ -70,13 +113,10 @@ function ageOf(ts: string | null | undefined): string {
   text-decoration: underline dotted;
 }
 .citation-card {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
+  position: fixed;
   z-index: 50;
   min-width: 14rem;
   max-width: 22rem;
-  margin-bottom: 0.25rem;
   padding: 0.4rem 0.55rem;
   background: var(--panel-bg);
   border: 1px solid var(--border);
@@ -85,6 +125,13 @@ function ageOf(ts: string | null | undefined): string {
   font-size: 0.76rem;
   white-space: normal;
   overflow-wrap: anywhere;
+  /* default: card's bottom edge anchored 4px above the link, growing upward -- matches the
+     original bottom:100% behavior without needing the card's height known in advance. */
+  transform: translateY(-100%);
+}
+.citation-card--down {
+  /* insufficient room above (near the viewport's own top edge) -- grow downward instead. */
+  transform: none;
 }
 .citation-card-head {
   font-weight: 600;
