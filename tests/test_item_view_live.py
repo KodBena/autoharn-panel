@@ -87,6 +87,7 @@ def build_cfg() -> PanelConfig:
         repo_root=REPO, connection=connection, schema=SCHEMA, kern_schema=KERN, role=ROLE,
         led_bin=LED_TMPL, read_only_locked=False, bind_host="127.0.0.1", bind_port=8420, poll_interval=2.0,
         extensions=("autoharn",), config_source="test-scratch", maintainer_principal="maintainer",
+        active_profile=None, available_profiles=(),
     )
 
 
@@ -181,6 +182,9 @@ def test_obligations_route_end_to_end(scratch_ledger: PanelConfig) -> None:
     assert len(body["witnesses"]) == 1
     assert body["witnesses"][0]["ref_kind"] == "row"
     assert body["witnesses"][0]["ref"] == str(w1)
+    # An ordinary note is not a `resource:` statement -- resource_fields degrades to None here,
+    # never a fabricated/partial shape (cycle-4 audit finding 6).
+    assert body["resource_fields"] is None
 
     res = panel_cosign.cosign(cfg, target, "attest", "self-review", "maintainer endorses the target row itself")
     assert res.ok
@@ -189,3 +193,29 @@ def test_obligations_route_end_to_end(scratch_ledger: PanelConfig) -> None:
     assert body2["cosign"]["cosigned"] is True
     assert len(body2["reviews"]) == 1
     assert body2["reviews"][0]["verdict"] == "attest"
+
+
+def test_obligations_route_resource_fields_end_to_end(scratch_ledger: PanelConfig) -> None:
+    """Live-DB proof that a `resource:` decision row's structured fields (cycle-4 audit finding
+    6, SERIOUS) survive the real route, not just the pure parser test_item_view.py already
+    covers -- the same `GET /api/item/{row_id}/obligations` end-to-end path
+    test_obligations_route_end_to_end above exercises for the ordinary case."""
+    from fastapi.testclient import TestClient
+
+    import app as app_module
+    importlib.reload(app_module)
+    client = TestClient(app_module.create_app())
+
+    resource_row = insert_note(
+        "",
+        "resource: makespan-scheduler | library | import:makespan_scheduler | "
+        "minimum-makespan schedule proof | reach for ordering 3+ work items | "
+        "blessed: ordering three or more claimed work items",
+    )
+    resp = client.get(f"/api/item/{resource_row}/obligations")
+    assert resp.status_code == 200
+    fields = resp.json()["resource_fields"]
+    assert fields is not None
+    assert fields["name"] == "makespan-scheduler"
+    assert fields["tier_kind"] == "blessed"
+    assert fields["tier"] == "blessed: ordering three or more claimed work items"

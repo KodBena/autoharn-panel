@@ -130,9 +130,31 @@ export interface ReviewRecord {
   basis: string
 }
 
+// A `resource:`-prefixed decision statement's six pipe-delimited fields (design/USER-BLESSED-
+// TABLE-TEMPLATE.md's "statement grammars" section), parsed server-side by
+// `extensions.autoharn.ledger_read.parse_resource_fields` and carried on `ItemObligations` below
+// -- `null` for any row that isn't a `resource:` statement, or is one but doesn't parse cleanly
+// (cycle-4 audit finding 6, SERIOUS: the item view rendered every statement, including these, as
+// one undifferentiated prose blob). `tier_kind` is the normalized badge class the backend
+// derives from `tier`'s leading word (`available | blessed | mandated | forbidden`); `tier`
+// itself keeps the full raw field (e.g. `blessed: <task-shape>`) so the task-shape detail is
+// never lost to the badge's coarser classification.
+export type ResourceTierKind = 'available' | 'blessed' | 'mandated' | 'forbidden'
+
+export interface ResourceFields {
+  name: string
+  class_: string
+  reach: string
+  what_it_proves: string
+  guidance: string
+  tier: string
+  tier_kind: ResourceTierKind
+}
+
 export interface ItemObligations {
   row_id: number
   cosign: CosignInfo
   reviews: ReviewRecord[]
   witnesses: Witness[]
+  resource_fields: ResourceFields | null
 }

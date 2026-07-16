@@ -110,13 +110,22 @@ def api_item_obligations(request: Request, row_id: int) -> dict[str, Any]:
     row itself is maintainer-cosigned, and this row's own `refs` read generically as witness
     tokens (`row:`/`work:`) and resolved the same way a decomposition item's witnesses are.
     Does not 404 on an unknown row_id -- every sub-query here degrades to an empty/false answer
-    for a row that does not exist, and core's own row fetch is the one that 404s."""
+    for a row that does not exist, and core's own row fetch is the one that 404s.
+
+    `resource_fields` (cycle-4 audit finding 6, SERIOUS) is the ONE additional autoharn-semantic
+    enrichment this route carries beyond obligations/cosign/witnesses proper: `ledger_read.
+    parse_resource_fields`'s structured read of a `resource:`-prefixed decision statement, `None`
+    for any row that isn't one (or is a malformed one) -- core's own `GET /api/rows/{row_id}`
+    keeps rendering the full raw statement regardless, so a parse failure here never hides
+    anything, it just adds nothing."""
     cfg = request.app.state.panel.cfg
+    row = ledger_read.ledger_row(cfg, row_id)
     return {
         "row_id": row_id,
         "cosign": ledger_read.cosign_fact(cfg, row_id),
         "reviews": ledger_read.reviews_for_row(cfg, row_id),
         "witnesses": [_witness_wire(rw) for rw in ledger_read.item_witnesses(cfg, row_id)],
+        "resource_fields": ledger_read.parse_resource_fields(row["statement"]) if row else None,
     }
 
 

@@ -13,6 +13,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import CosignPanel from './CosignPanel.vue'
+import ResourceFieldsCard from './ResourceFieldsCard.vue'
 import { fetchItemObligations } from '../services/item'
 import type { ItemObligations } from '../services/types'
 import { fmtTs } from '../../../utils/format'
@@ -48,6 +49,8 @@ defineExpose({ reload: load })
     <div v-if="loading" class="muted">loading…</div>
     <div v-if="error" class="error-banner">{{ error }}</div>
     <template v-if="data">
+      <ResourceFieldsCard v-if="data.resource_fields" :fields="data.resource_fields" />
+
       <h3>Co-sign (this row)</h3>
       <CosignPanel :row-id="rowId" :cosign="data.cosign" label="co-sign this row" @cosigned="load" />
 
