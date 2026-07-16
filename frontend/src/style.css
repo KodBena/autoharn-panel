@@ -353,6 +353,32 @@ tr.superseded-row td:first-child { border-left: 3px solid var(--border); }
   font-size: 0.85rem;
 }
 
+/* live-update-affordance (row:253): a discrete "click to load" banner replacing a silent
+ * auto-refetch on ledger change. The wrapping element stays mounted at all times (even with no
+ * button inside) so its aria-live=polite region (set in the template) is announced correctly
+ * when the button appears -- an aria-live region that gets inserted into the DOM only when
+ * needed is not reliably announced by screen readers, only one already present and mutated is. */
+.live-update-banner {
+  min-height: 0;
+}
+.live-update-banner__btn {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border: 1px solid var(--warn-text);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.live-update-banner__btn:hover {
+  filter: brightness(1.05);
+}
+
 .refresh-row {
   display: flex;
   align-items: center;

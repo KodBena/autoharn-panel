@@ -117,6 +117,7 @@ async function load(): Promise<void> {
     if (err) throw err
     rows.value = (data ?? []) as Record<string, unknown>[]
     error.value = null
+    updatesAvailable.value = false
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   }
@@ -138,10 +139,25 @@ onMounted(() => {
   load()
 })
 // This tab is mounted only while its own tab panel is visible (App.vue uses v-if per tab), so
-// watching the shared `tick` here refetches only THIS view's data, on ledger change -- no other
-// tab does extra work because this one is open (SPEC.md sec 3: "no view refetches more than its
-// own visible data").
-watch(tick, load)
+// watching the shared `tick` here would refetch only THIS view's data, on ledger change -- no
+// other tab does extra work because this one is open (SPEC.md sec 3: "no view refetches more
+// than its own visible data").
+//
+// It used to call `load()` directly on every tick (silent full refetch/rerender under an
+// actively-reading operator, no toast, no way to opt out -- the consult's live-update-UX
+// finding). Instead, a tick now only raises a discrete "updates available" banner; the refetch
+// itself is deferred until the operator clicks it. This is the row:247 decision's chosen
+// affordance (banner over pause-on-scroll): LedgerTab has no row-expansion/scroll-position state
+// to pause against, just a flat paginated table, so "click to load" is the smaller change that
+// fits the tab's existing manual-refresh pattern.
+const updatesAvailable = ref(false)
+watch(tick, () => {
+  updatesAvailable.value = true
+})
+async function applyPendingUpdates(): Promise<void> {
+  updatesAvailable.value = false
+  await load()
+}
 
 defineExpose({ reload: load })
 </script>
@@ -172,6 +188,11 @@ defineExpose({ reload: load })
       </label>
       <label for="row-limit">limit:</label>
       <input id="row-limit" v-model.number="limit" type="number" min="1" style="width: 5.5rem" />
+    </div>
+    <div class="live-update-banner" role="status" aria-live="polite">
+      <button v-if="updatesAvailable" type="button" class="live-update-banner__btn" @click="applyPendingUpdates">
+        Updates available -- click to load
+      </button>
     </div>
     <div v-if="error" class="error-banner">{{ error }}</div>
     <DataTable
