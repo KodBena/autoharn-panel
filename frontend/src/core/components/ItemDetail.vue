@@ -13,6 +13,7 @@ import { api } from '../services/api-client'
 import type { LedgerRow } from '../services/types'
 import { fmtTs } from '../../utils/format'
 import CitationText from './CitationText.vue'
+import CitationLink from './CitationLink.vue'
 
 const props = defineProps<{ rowId: number }>()
 
@@ -73,17 +74,39 @@ defineExpose({ reload: load })
         <!-- no-elision (SPEC.md sec 0): full text, wraps, never clipped -->
         <dd class="statement-text"><CitationText :text="row.statement" /></dd>
         <dt>refs (raw)</dt>
-        <dd class="statement-text mono">{{ row.refs || '(none)' }}</dd>
+        <!-- raw refs text may contain `row:<id>` tokens alongside other, non-row-shaped tokens
+             (`work:...`, `panel-item:...`, free prose, per ledger_read.generic_row_refs's own
+             comment) -- CitationText's regex only lights up the row:<id> ones, same as it does
+             for `statement`, leaving the rest as plain text. -->
+        <dd class="statement-text mono">
+          <CitationText v-if="row.refs" :text="row.refs" />
+          <span v-else class="muted">(none)</span>
+        </dd>
         <dt>refs → rows</dt>
         <dd>
           <span v-if="!row.ref_row_ids || row.ref_row_ids.length === 0" class="muted">(none)</span>
-          <span v-else class="mono">{{ row.ref_row_ids.join(', ') }}</span>
+          <!-- ref_row_ids are already-resolved bare ids (ints), not `row:<id>`-shaped text, so
+               CitationText's token regex has nothing to match -- render each id directly through
+               CitationText's own leaf, CitationLink, instead. -->
+          <span v-else class="mono">
+            <template v-for="(id, i) in row.ref_row_ids" :key="id"
+              ><span v-if="i > 0">, </span><CitationLink :row-id="id"
+            /></template>
+          </span>
         </dd>
         <dt>supersede chain</dt>
         <dd>
           <span class="mono">
-            predecessors: {{ row.predecessors && row.predecessors.length ? row.predecessors.join(', ') : '(none)' }}
-            · successor: {{ row.successor ?? '(none)' }}
+            predecessors:
+            <template v-if="row.predecessors && row.predecessors.length">
+              <template v-for="(id, i) in row.predecessors" :key="id"
+                ><span v-if="i > 0">, </span><CitationLink :row-id="id"
+              /></template>
+            </template>
+            <span v-else class="muted">(none)</span>
+            · successor:
+            <CitationLink v-if="row.successor != null" :row-id="row.successor" />
+            <span v-else class="muted">(none)</span>
           </span>
         </dd>
       </dl>
