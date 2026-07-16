@@ -7,7 +7,7 @@
   component itself (leaf-owns-its-read), never here.
 -->
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { healthState, loadHealth } from './core/state/health'
 import { useLiveUpdates } from './core/composables/useLiveUpdates'
@@ -66,9 +66,32 @@ const visibleTabs = computed(() => TAB_DEFS.filter((t) => t.core || autoharnEnab
 const activeTabDef = computed(() => visibleTabs.value.find((t) => t.id === activeTab.value))
 
 onMounted(loadHealth)
+
+// cycle5-tab-bar-accessibility (findings 5+6, docs/consults/2026-07-16-spa-audit-5): the tablist
+// had role="tab"/aria-selected but no roving tabindex and no ArrowRight/ArrowLeft handling -- per
+// the WAI-ARIA APG Tabs pattern, only the active tab sits in the normal tab order (tabindex 0),
+// every other tab is -1, and arrow keys move BOTH focus and selection between them (wrapping at
+// the ends). tabButtonRefs is keyed by index into `visibleTabs`, same array the template v-for
+// walks, so the ref at `nextIndex` is always the button for `visibleTabs.value[nextIndex]`.
+const tabButtonRefs = ref<(HTMLButtonElement | null)[]>([])
+function setTabButtonRef(el: Element | { $el?: Element } | null, index: number) {
+  tabButtonRefs.value[index] = (el as HTMLButtonElement | null) ?? null
+}
+function onTabKeydown(event: KeyboardEvent, index: number) {
+  if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+  event.preventDefault()
+  const tabs = visibleTabs.value
+  if (tabs.length === 0) return
+  const delta = event.key === 'ArrowRight' ? 1 : -1
+  const nextIndex = (index + delta + tabs.length) % tabs.length
+  selectTab(tabs[nextIndex].id)
+  nextTick(() => tabButtonRefs.value[nextIndex]?.focus())
+}
 </script>
 
 <template>
+  <a href="#main-content" class="skip-link">Skip to content</a>
+
   <header class="top">
     <div class="title-block">
       <h1>Ledger panel</h1>
@@ -104,21 +127,38 @@ onMounted(loadHealth)
   <template v-if="isTabRoute">
     <nav class="tabs" role="tablist">
       <button
-        v-for="t in visibleTabs"
+        v-for="(t, index) in visibleTabs"
         :key="t.id"
+        :ref="(el) => setTabButtonRef(el as Element | null, index)"
+        :id="`tab-${t.id}`"
         class="tab-btn"
         :class="{ active: activeTab === t.id }"
         role="tab"
         :aria-selected="activeTab === t.id"
+        :aria-controls="`tabpanel-${t.id}`"
+        :tabindex="activeTab === t.id ? 0 : -1"
         @click="selectTab(t.id)"
+        @keydown="onTabKeydown($event, index)"
       >
         {{ t.label }}
       </button>
     </nav>
-
-    <component :is="activeTabDef.component" v-if="activeTabDef" :key="activeTab" />
   </template>
-  <RouterView v-else />
+
+  <main id="main-content" tabindex="-1">
+    <template v-if="isTabRoute">
+      <div
+        v-if="activeTabDef"
+        :id="`tabpanel-${activeTab}`"
+        role="tabpanel"
+        :aria-labelledby="`tab-${activeTab}`"
+        tabindex="0"
+      >
+        <component :is="activeTabDef.component" :key="activeTab" />
+      </div>
+    </template>
+    <RouterView v-else />
+  </main>
 
   <footer class="foot">
     Ledger panel — Vue 3 port. Extension boundary: core (rows/kinds/refs/supersession) vs

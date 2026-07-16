@@ -33,6 +33,25 @@ h3 { font-size: 0.92rem; color: var(--text-dim); text-transform: none; }
 .muted { color: var(--text-dim); }
 .mono { font-family: var(--mono); font-size: 0.85em; }
 
+/* cycle5-tab-bar-accessibility (finding 5): the very first focusable element in the DOM, so a
+ * keyboard/screen-reader user can jump straight past the header+tablist to #main-content instead
+ * of tabbing through every nav button on every page load/route change. Off-screen until focused
+ * (standard skip-link pattern), token-only colors. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 1000;
+  padding: 0.5rem 1rem;
+  background: var(--panel-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0 0 6px 0;
+}
+.skip-link:focus {
+  left: 0;
+}
+
 header.top {
   display: flex;
   align-items: baseline;
