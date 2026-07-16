@@ -13,6 +13,7 @@
 import { defineComponent, h } from 'vue'
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import ItemView from './ItemView.vue'
+import NotFoundView from './NotFoundView.vue'
 
 const RootPlaceholder = defineComponent({ name: 'RootPlaceholder', render: () => h('div') })
 
@@ -37,6 +38,12 @@ const routes: RouteRecordRaw[] = [
   { path: TAB_PATHS['review-gap'], component: RootPlaceholder },
   { path: TAB_PATHS.questions, component: RootPlaceholder },
   { path: '/item/:id', component: ItemView, props: true },
+  // Catch-all: any path matching none of the above (cycle3-unknown-path-404 / consult finding
+  // 4). Must stay LAST -- vue-router resolves routes in declaration order. App.vue's own
+  // isTabRoute gate is what actually decides tab-UI-vs-RouterView; this route just gives the
+  // unmatched-path case something distinct to resolve to under RouterView so App.vue can tell
+  // it apart from a recognized tab path.
+  { path: '/:pathMatch(.*)*', component: NotFoundView },
 ]
 
 export const router = createRouter({

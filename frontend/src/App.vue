@@ -27,7 +27,13 @@ const { status } = useLiveUpdates()
 // they were before routing existed, gated by `isItemRoute` rather than replaced.
 const route = useRoute()
 const router = useRouter()
-const isItemRoute = computed(() => route.path.startsWith('/item/'))
+// cycle3-unknown-path-404: was `isItemRoute = path.startsWith('/item/')`, which meant any path
+// NOT starting with '/item/' fell through to the tab UI -- including a bogus, unrecognized path,
+// silently rendering the default 'ledger' tab (pathToTab.get(...) ?? 'ledger' below) with no cue
+// the URL was wrong. Inverted to a positive check: only a recognized tab path renders the tab
+// UI; everything else (both '/item/:id' and the new catch-all not-found route) goes through
+// RouterView, which resolves each to its own distinct view.
+const isTabRoute = computed(() => (Object.values(TAB_PATHS) as string[]).includes(route.path))
 
 type TabId = 'ledger' | 'profiles' | 'work' | 'review-gap' | 'questions' | 'commission'
 
@@ -101,7 +107,7 @@ onMounted(loadHealth)
     </div>
   </header>
 
-  <template v-if="!isItemRoute">
+  <template v-if="isTabRoute">
     <nav class="tabs" role="tablist">
       <button
         v-for="t in visibleTabs"
