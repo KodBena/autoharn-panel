@@ -2,19 +2,40 @@
 // deep-linkable (`/item/<row-id>`)"). App.vue stays the single always-mounted root component
 // (main.ts's `createApp(App)` is unchanged); this router is installed alongside it
 // (`app.use(router)`) and App.vue itself decides, via `useRoute()`, whether to render its
-// existing tab UI (path '/') or a `<RouterView />` (path '/item/:id') -- so the '/' route below
-// is declared only so vue-router recognizes the path at all; it is never actually rendered
-// through a `<router-view>` (App.vue shows its own tab markup for that path instead), which is
-// why its component is an inert placeholder rather than App itself (that would need App to
-// import this file, which imports App.vue's sibling ItemView -- no cycle, but no purpose either).
+// existing tab UI (any '/ledger', '/profiles', ... tab path) or a `<RouterView />` (path
+// '/item/:id') -- so the tab routes below are declared only so vue-router recognizes each path,
+// reflects it in the URL bar, and restores it on reload/direct-nav/bookmark (cycle-3 consult
+// finding 3); they are never actually rendered through a `<router-view>` (App.vue shows its own
+// tab markup for those paths instead), which is why each tab's component is an inert placeholder
+// rather than the real tab component (that would need App's tab components imported here too,
+// duplicating what App.vue already owns, for no rendering benefit -- App.vue keeps sole
+// ownership of tab-content rendering; this file only owns path<->tab recognition).
 import { defineComponent, h } from 'vue'
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import ItemView from './ItemView.vue'
 
 const RootPlaceholder = defineComponent({ name: 'RootPlaceholder', render: () => h('div') })
 
+// Tab path slugs, one per tab id in App.vue's TabId union. 'ledger' is the app's default tab
+// (row:557/cycle3-tab-url-routing's acceptance: "redirect `/` to whichever tab is the current
+// default"), so '/' redirects there rather than being its own distinct route.
+export const TAB_PATHS = {
+  ledger: '/ledger',
+  profiles: '/profiles',
+  commission: '/commissions',
+  work: '/work-items',
+  'review-gap': '/review-gap',
+  questions: '/questions',
+} as const
+
 const routes: RouteRecordRaw[] = [
-  { path: '/', component: RootPlaceholder },
+  { path: '/', redirect: TAB_PATHS.ledger },
+  { path: TAB_PATHS.ledger, component: RootPlaceholder },
+  { path: TAB_PATHS.profiles, component: RootPlaceholder },
+  { path: TAB_PATHS.commission, component: RootPlaceholder },
+  { path: TAB_PATHS.work, component: RootPlaceholder },
+  { path: TAB_PATHS['review-gap'], component: RootPlaceholder },
+  { path: TAB_PATHS.questions, component: RootPlaceholder },
   { path: '/item/:id', component: ItemView, props: true },
 ]
 
