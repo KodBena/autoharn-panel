@@ -304,6 +304,67 @@ three rules trip the refusal, or does it already know?
 
 ---
 
+## Suggestion 2 (open, not a settled design) — dispatch-time dependency enforcement between agent tasks
+
+**What prompted this.** This session recorded, by its own admission, at least two occurrences of
+the same failure shape: an orchestrating session dispatching a review agent and the implementation
+work that review is supposed to gate in the *same* batch, racing them instead of sequencing them —
+one already filed upstream as [`anthropics/claude-code#77900`](https://github.com/anthropics/claude-code/issues/77900)
+(a prior session's incident), a second self-caught and disclosed as a follow-up comment on that same
+issue this session (a whole-cycle decomposition's review and its six implementation batches, both
+fired in one dispatch). The maintainer flagged this pattern as recurring often enough — "third
+time" — that it is worth autoharn's own attention, not just a harness-level fix on the Claude Code
+side.
+
+**What already exists, and its real limits.** `autoharn` is not starting from nothing here:
+`hooks/pretooluse_change_gate.py`'s `decomposition_review` mechanism (BACKLOG
+"decomposition-review-blocker", maintainer ruling 2026-07-12, module docstring's own
+"DECOMPOSITION-REVIEW BLOCKER" section) is aimed at close to this exact problem — it denies a
+substantive `Write`/`Edit`/`NotebookEdit` (or a governed-file-mutating Bash command) while a claimed
+work item's own decomposition remains uncountersigned, reusing `review_gap`'s own discharge
+predicate rather than re-deriving a second copy of it. This is a real, already-built mechanism, not
+a gap that needs inventing from scratch. But three properties, confirmed live against this
+deployment while investigating this suggestion, limit how much it actually helps today:
+
+1. **Vacuous by construction unless `countersign_obligation` carries rows for the relevant actor** —
+   confirmed live: this deployment's `countersign_obligation` table has **zero rows**. `led obligate`
+   (the verb that populates it — `led.tmpl` names a worked example, `led obligate decomposition-review
+   ...`) was never invoked once this entire session. The mechanism has therefore been silently doing
+   nothing, for every decomposition made, the whole time — not because it is broken, but because
+   arming it is an opt-in step nobody here knew to take.
+2. **Default mode is `observe`, not `enforce`** — confirmed live in this deployment's own
+   `.claude/apparatus.json`: `"decomposition_review": {"mode": "observe"}`. Even with
+   `countersign_obligation` rows present, this world's own config would only warn, never block,
+   until an operator flips that one line.
+3. **Genuinely unresolved, not live-tested this pass**: whether this `PreToolUse` hook's enforcement
+   extends to a **dispatched subagent's own tool calls**, or only the orchestrating session's direct
+   edits. This is the crux, not a footnote — every actual violation named above was the orchestrating
+   session *choosing which subagents to dispatch together*, never a direct edit the orchestrating
+   session made itself. If the hook only ever sees the top-level session's own `Write`/`Edit` calls,
+   arming `decomposition_review` fully (obligation rows present, mode `enforce`) would still not have
+   caught either recorded instance, because the offending edits happened inside subagents' own tool
+   invocations, one layer removed from what the hook observes.
+
+**The suggestion, offered as a direction, same posture as Suggestion 1 above.** If item 3's answer
+is "no, subagent dispatch is invisible to this hook" (unverified — this needs an actual test, not a
+docstring read), the real gap is a mechanism operating at the *dispatch* boundary itself — something
+that can refuse or warn when an orchestrating session attempts to fire off an `Agent`/`Task`-shaped
+tool call while an antecedent claimed item (named by a review obligation, or by a `work_depends_on
+blocks-close` edge) is still undischarged — the same logical check `decomposition_review` already
+computes, just evaluated one level higher, at the moment of dispatch rather than at the moment of
+the dispatched agent's own file write. If item 3's answer turns out to be "yes, it already covers
+subagents" — then the fix is smaller and different: `decomposition_review` simply needs to be
+**documented as a usage recipe**, the way this file's Suggestion 1 asks for a briefing mechanism.
+Right now `led obligate` appears exactly once in `design/USER-RECIPES-FAQ.md`, in passing, inside
+the makespan-scheduler entry ("full treatment ... rides this project's own `led review`/`led
+obligate` machinery and what remains unbuilt today") — never as its own recipe answering the
+question this suggestion is about: "how do I make an implementation step wait on a review step,
+mechanically, not by my own remembered discipline." Either branch of this — a new dispatch-time
+mechanism, or documenting the existing one as a recipe once its subagent-coverage is confirmed —
+would close a gap that has now cost real, repeated, self-disclosed incidents.
+
+---
+
 ## Verification note
 
 Every file path and line reference above was checked against the actual
