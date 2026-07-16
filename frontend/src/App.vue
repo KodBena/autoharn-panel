@@ -11,23 +11,19 @@ import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { healthState, loadHealth } from './core/state/health'
 import { useLiveUpdates } from './core/composables/useLiveUpdates'
-import LedgerTab from './core/components/LedgerTab.vue'
-import ProfilesPanel from './core/components/ProfilesPanel.vue'
-import WorkItemsTab from './extensions/autoharn/components/WorkItemsTab.vue'
-import ReviewGapTab from './extensions/autoharn/components/ReviewGapTab.vue'
-import QuestionsTab from './extensions/autoharn/components/QuestionsTab.vue'
-import WorkViolationsTab from './extensions/autoharn/components/WorkViolationsTab.vue'
-import FindingsSnagsTab from './extensions/autoharn/components/FindingsSnagsTab.vue'
-import StandingDecisionsTab from './extensions/autoharn/components/StandingDecisionsTab.vue'
-import CommissionTab from './extensions/autoharn/components/CommissionTab.vue'
-import { TAB_PATHS } from './router'
+import { TAB_DEFS, type TabId } from './tabs'
 
 const { status } = useLiveUpdates()
 
 // App.vue is the ONE always-mounted root component (main.ts's `createApp(App)`); rather than a
 // separate root wrapper, this reads its own route (router.ts) to decide tab-UI vs the deep-
-// linkable item view (SPEC.md sec 2.2) -- the six tabs below are otherwise byte-for-byte what
-// they were before routing existed, gated by `isItemRoute` rather than replaced.
+// linkable item view (SPEC.md sec 2.2). All tab wiring (which tabs exist, their labels,
+// components, and route paths) is data-driven from `./tabs`'s TAB_DEFS array (work item
+// tab-architecture-consolidation, row:748) -- previously 3 hand-maintained parallel spots here
+// (a `TabId` union, separate `coreTabs`/`autoharnTabs` arrays, and a template `v-if` chain per
+// tab), each touched by every tab-adding commit. That also removes this file's own stale tab-
+// count comment this paragraph used to carry ("the six tabs below") -- TAB_DEFS is now the one
+// place a tab count could be read from, so there is nothing left here to hand-narrate or drift.
 const route = useRoute()
 const router = useRouter()
 // cycle3-unknown-path-404: was `isItemRoute = path.startsWith('/item/')`, which meant any path
@@ -36,30 +32,18 @@ const router = useRouter()
 // the URL was wrong. Inverted to a positive check: only a recognized tab path renders the tab
 // UI; everything else (both '/item/:id' and the new catch-all not-found route) goes through
 // RouterView, which resolves each to its own distinct view.
-const isTabRoute = computed(() => (Object.values(TAB_PATHS) as string[]).includes(route.path))
-
-type TabId =
-  | 'ledger'
-  | 'profiles'
-  | 'work'
-  | 'review-gap'
-  | 'questions'
-  | 'work-violations'
-  | 'findings-snags'
-  | 'standing-decisions'
-  | 'commission'
+const isTabRoute = computed(() => TAB_DEFS.some((t) => t.path === route.path))
 
 // row:557/cycle3-tab-url-routing: activeTab is now DERIVED from the URL (not its own ref) so
 // that switching tabs, reloading, bookmarking, or navigating directly to a tab's URL all agree
 // on which tab is showing -- the URL is the single source of truth, per the consult's finding 3.
-const pathToTab = new Map<string, TabId>(
-  (Object.entries(TAB_PATHS) as [TabId, string][]).map(([id, path]) => [path, id]),
-)
+const pathToTab = new Map<string, TabId>(TAB_DEFS.map((t) => [t.path, t.id as TabId]))
 const activeTab = computed<TabId>(() => pathToTab.get(route.path) ?? 'ledger')
 
 function selectTab(id: TabId) {
   if (activeTab.value === id) return
-  router.push(TAB_PATHS[id])
+  const def = TAB_DEFS.find((t) => t.id === id)
+  if (def) router.push(def.path)
 }
 
 const autoharnEnabled = computed(
@@ -67,24 +51,19 @@ const autoharnEnabled = computed(
 )
 
 // 'Profiles' is core (row:141's commission: profile configuration from within the SPA is not
-// autoharn-specific), so it is always in coreTabs, unlike the four autoharn-gated tabs below.
-const coreTabs: { id: TabId; label: string }[] = [
-  { id: 'ledger', label: 'Recent ledger' },
-  { id: 'profiles', label: 'Profiles' },
-]
-const autoharnTabs: { id: TabId; label: string }[] = [
-  { id: 'commission', label: 'Commission decomposition' },
-  { id: 'work', label: 'Work items' },
-  { id: 'review-gap', label: 'Review gap' },
-  { id: 'questions', label: 'Questions' },
-  { id: 'work-violations', label: 'Violations' },
-  { id: 'findings-snags', label: 'Findings & snags' },
-  { id: 'standing-decisions', label: 'Standing decisions' },
-]
+// autoharn-specific), unlike the 7 autoharn-gated tabs -- TAB_DEFS' own `core` field carries this
+// now, filtered here instead of two separately-declared arrays.
+const visibleTabs = computed(() => TAB_DEFS.filter((t) => t.core || autoharnEnabled.value))
 
-const visibleTabs = computed(() =>
-  autoharnEnabled.value ? [...coreTabs, ...autoharnTabs] : coreTabs,
-)
+// The single mounted tab component, replacing the old per-tab `v-if="activeTab === '...'"` chain
+// (itself nested inside a `v-if="autoharnEnabled"` template for the 7 gated tabs). Derived from
+// `visibleTabs`, NOT the full TAB_DEFS, so navigating straight to a gated tab's URL while
+// autoharn is disabled renders nothing for it (same graceful-degrade as before: the tab bar
+// shows only core tabs, and no component mounts for a route whose tab isn't currently visible).
+// Exactly one tab component is ever mounted at a time (never all 9 with some hidden), matching
+// every tab's own onMounted-fetch-on-mount contract (see e.g. LedgerTab.vue's own header
+// comment: "no other tab does extra work because this one is open").
+const activeTabDef = computed(() => visibleTabs.value.find((t) => t.id === activeTab.value))
 
 onMounted(loadHealth)
 </script>
@@ -137,17 +116,7 @@ onMounted(loadHealth)
       </button>
     </nav>
 
-    <LedgerTab v-if="activeTab === 'ledger'" />
-    <ProfilesPanel v-if="activeTab === 'profiles'" />
-    <template v-if="autoharnEnabled">
-      <CommissionTab v-if="activeTab === 'commission'" />
-      <WorkItemsTab v-if="activeTab === 'work'" />
-      <ReviewGapTab v-if="activeTab === 'review-gap'" />
-      <QuestionsTab v-if="activeTab === 'questions'" />
-      <WorkViolationsTab v-if="activeTab === 'work-violations'" />
-      <FindingsSnagsTab v-if="activeTab === 'findings-snags'" />
-      <StandingDecisionsTab v-if="activeTab === 'standing-decisions'" />
-    </template>
+    <component :is="activeTabDef.component" v-if="activeTabDef" :key="activeTab" />
   </template>
   <RouterView v-else />
 
