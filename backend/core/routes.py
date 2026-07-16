@@ -40,15 +40,27 @@ def api_rows(
     actor: str | None = None,
     q: str | None = None,
     since_id: int | None = None,
+    since: str | None = None,
+    until: str | None = None,
     include_superseded: bool = False,
+    sort_by: str = "id",
+    sort_dir: str = "desc",
     limit: int = 200,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
+    """`since`/`until` are the date-range facet (SPEC.md sec 2.1), `sort_by`/`sort_dir` the
+    column-sort facet -- both passed straight through to `ledger_read.rows`, which owns their
+    validation (a closed `sort_by`/`sort_dir` vocabulary; an unrecognized value is a 400, not a
+    silent fallback or an injectable identifier)."""
     cfg = request.app.state.panel.cfg
-    return ledger_read.rows(
-        cfg, kind=kind, actor_name=actor, q=q, since_id=since_id,
-        include_superseded=include_superseded, limit=limit, offset=offset,
-    )
+    try:
+        return ledger_read.rows(
+            cfg, kind=kind, actor_name=actor, q=q, since_id=since_id, since=since, until=until,
+            include_superseded=include_superseded, sort_by=sort_by, sort_dir=sort_dir,
+            limit=limit, offset=offset,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/api/rows/facet-counts")

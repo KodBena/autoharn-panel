@@ -32,6 +32,10 @@ export interface Column {
   label: string
   mono?: boolean
   width?: string // CSS grid track, e.g. "5rem" or "1fr"
+  /** server-side sort key this column maps to (e.g. actor_name column -> `actor` API param) --
+   * a column is clickable-to-sort only when this is set; omitted entirely for columns whose
+   * meaning does not map to a single server column (e.g. `statement`). */
+  sortKey?: string
 }
 
 const props = withDefaults(
@@ -43,11 +47,27 @@ const props = withDefaults(
     supersededIds?: Set<string | number>
     emptyText?: string
     rowHeightPx?: number
+    /** current sort state, for the header's active-column indicator -- purely cosmetic, the
+     * actual sorting happens server-side (the caller re-fetches on `sort-change`). */
+    sortBy?: string | null
+    sortDir?: 'asc' | 'desc'
   }>(),
-  { supersededIds: () => new Set(), emptyText: 'No rows.', rowHeightPx: 34 },
+  { supersededIds: () => new Set(), emptyText: 'No rows.', rowHeightPx: 34, sortBy: null, sortDir: 'desc' },
 )
 
-const emit = defineEmits<{ (e: 'row-click', rowId: string | number): void }>()
+const emit = defineEmits<{
+  (e: 'row-click', rowId: string | number): void
+  (e: 'sort-change', sortKey: string): void
+}>()
+
+function onHeaderClick(col: Column): void {
+  if (col.sortKey) emit('sort-change', col.sortKey)
+}
+
+function sortIndicator(col: Column): string {
+  if (!col.sortKey || props.sortBy !== col.sortKey) return ''
+  return props.sortDir === 'asc' ? ' ▲' : ' ▼'
+}
 
 const VIRTUALIZE_ABOVE = 200
 
@@ -86,7 +106,12 @@ function isSuperseded(row: Record<string, unknown>): boolean {
     <table v-else-if="!shouldVirtualize">
       <thead>
         <tr>
-          <th v-for="col in columns" :key="col.key">{{ col.label }}</th>
+          <th
+            v-for="col in columns"
+            :key="col.key"
+            :class="{ sortable: col.sortKey }"
+            @click="onHeaderClick(col)"
+          >{{ col.label }}{{ sortIndicator(col) }}</th>
         </tr>
       </thead>
       <tbody>
@@ -110,7 +135,14 @@ function isSuperseded(row: Record<string, unknown>): boolean {
       :style="{ maxHeight: '480px' }"
     >
       <div class="virtual-grid-head" :style="{ display: 'grid', gridTemplateColumns: gridTemplate }" role="row">
-        <div v-for="col in columns" :key="col.key" role="columnheader" class="vg-cell vg-head">{{ col.label }}</div>
+        <div
+          v-for="col in columns"
+          :key="col.key"
+          role="columnheader"
+          class="vg-cell vg-head"
+          :class="{ sortable: col.sortKey }"
+          @click="onHeaderClick(col)"
+        >{{ col.label }}{{ sortIndicator(col) }}</div>
       </div>
       <div class="virtual-inner" :style="{ height: virtualizer.getTotalSize() + 'px' }">
         <div
@@ -149,5 +181,14 @@ function isSuperseded(row: Record<string, unknown>): boolean {
   position: sticky;
   top: 0;
   background: var(--panel-bg);
+}
+th.sortable,
+.vg-head.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+th.sortable:hover,
+.vg-head.sortable:hover {
+  color: var(--text);
 }
 </style>

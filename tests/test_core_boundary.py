@@ -130,3 +130,55 @@ def test_bare_schema_core_reads_a_written_row(bare_app) -> None:
 
         facets = client.get("/api/rows/facet-counts").json()
         assert facets.get("note") == 1
+
+
+def test_bare_schema_rows_actor_and_date_range_facets(bare_app) -> None:
+    """The recent-ledger-navigability facets (SPEC.md sec 2.1): `actor` already worked before
+    this item; `since`/`until` (date-range) and `sort_by`/`sort_dir` (column-sort) are what this
+    item adds -- exercised here against the SAME bare, core-only schema the rest of this file
+    proves the extension boundary against."""
+    author_id_r = psql(f"SELECT id FROM {KERN}.principal WHERE name='author';")
+    author_id = int(author_id_r.stdout.strip())
+    psql(f"INSERT INTO {KERN}.principal (name) VALUES ('other') ON CONFLICT DO NOTHING;")
+    other_id_r = psql(f"SELECT id FROM {KERN}.principal WHERE name='other';")
+    other_id = int(other_id_r.stdout.strip())
+
+    ins_old = psql(
+        f"INSERT INTO {SCHEMA}.ledger (kind, statement, actor, ts) VALUES "
+        f"('note', 'an old row', {author_id}, now() - interval '10 days') RETURNING id;"
+    )
+    old_id = int(ins_old.stdout.strip())
+    ins_new = psql(
+        f"INSERT INTO {SCHEMA}.ledger (kind, statement, actor, ts) VALUES "
+        f"('note', 'a fresh row', {other_id}, now()) RETURNING id;"
+    )
+    new_id = int(ins_new.stdout.strip())
+    # the cutoff between the two rows, computed server-side (never a hardcoded calendar date --
+    # this test must stay correct regardless of when it runs) then read back as a plain ISO
+    # string, the same shape a UI date-range input would send.
+    cutoff = psql("SELECT (now() - interval '5 days')::text;").stdout.strip()
+
+    with TestClient(bare_app) as client:
+        # actor facet
+        by_actor = client.get("/api/rows", params={"actor": "other"}).json()
+        assert [r["id"] for r in by_actor] == [new_id]
+
+        # date-range facet: `since` excludes the old row, `until` excludes the new one. `since`/
+        # `until` are passed straight through to Postgres as parametrized values (an ISO date
+        # string Postgres's own `timestamptz` input parser accepts), never interpolated SQL text.
+        only_old = client.get("/api/rows", params={"until": cutoff}).json()
+        assert all(r["id"] != new_id for r in only_old)
+        assert any(r["id"] == old_id for r in only_old)
+
+        only_new = client.get("/api/rows", params={"since": cutoff}).json()
+        assert any(r["id"] == new_id for r in only_new)
+        assert all(r["id"] != old_id for r in only_new)
+
+        # sort-by-column facet: closed vocabulary, ascending id puts the oldest bare-schema row
+        # first (row ids are monotonically increasing on insert order)
+        asc = client.get("/api/rows", params={"sort_by": "id", "sort_dir": "asc"}).json()
+        ids = [r["id"] for r in asc]
+        assert ids == sorted(ids)
+
+        bad_sort = client.get("/api/rows", params={"sort_by": "statement"})
+        assert bad_sort.status_code == 400

@@ -25,17 +25,47 @@ const rows = ref<Record<string, unknown>[]>([])
 const error = ref<string | null>(null)
 const includeSuperseded = ref(false)
 const kindFilter = ref('')
+const actorFilter = ref('')
+const sinceFilter = ref('')
+const untilFilter = ref('')
 const limit = ref(200)
+const offset = ref(0)
+const sortBy = ref<'id' | 'ts' | 'kind' | 'actor'>('id')
+const sortDir = ref<'asc' | 'desc'>('desc')
 
 const { tick } = useLiveUpdates()
 
 const columns: Column[] = [
-  { key: 'id', label: 'id', mono: true, width: '4.5rem' },
-  { key: 'kind', label: 'kind', width: '8rem' },
-  { key: 'actor_name', label: 'actor', width: '9rem' },
-  { key: 'ts_fmt', label: 'ts', mono: true, width: '11rem' },
+  { key: 'id', label: 'id', mono: true, width: '4.5rem', sortKey: 'id' },
+  { key: 'kind', label: 'kind', width: '8rem', sortKey: 'kind' },
+  { key: 'actor_name', label: 'actor', width: '9rem', sortKey: 'actor' },
+  { key: 'ts_fmt', label: 'ts', mono: true, width: '11rem', sortKey: 'ts' },
   { key: 'statement', label: 'statement', width: '3fr' },
 ]
+
+// A full page (rows.length === limit) means there MAY be a next page -- this endpoint has no
+// total-count field to compare against, so "has more" is inferred the same way any offset/limit
+// API without a count does: fetch one page, and if it's full, offer Next (the Next fetch itself
+// will come back short/empty when there truly is nothing further).
+const hasNextPage = computed(() => rows.value.length === limit.value)
+const hasPrevPage = computed(() => offset.value > 0)
+const pageNumber = computed(() => Math.floor(offset.value / limit.value) + 1)
+
+function goToNextPage(): void {
+  if (hasNextPage.value) offset.value += limit.value
+}
+function goToPrevPage(): void {
+  offset.value = Math.max(0, offset.value - limit.value)
+}
+function onSortChange(key: string): void {
+  const k = key as 'id' | 'ts' | 'kind' | 'actor'
+  if (sortBy.value === k) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortBy.value = k
+    sortDir.value = 'desc'
+  }
+}
 
 // Rows whose id appears as some OTHER row's `supersedes` value, within the currently fetched
 // page, are superseded -- this endpoint does not stamp that fact onto the row itself, so it is
@@ -61,7 +91,13 @@ async function load(): Promise<void> {
         query: {
           include_superseded: includeSuperseded.value,
           kind: kindFilter.value || undefined,
+          actor: actorFilter.value || undefined,
+          since: sinceFilter.value || undefined,
+          until: untilFilter.value || undefined,
+          sort_by: sortBy.value,
+          sort_dir: sortDir.value,
           limit: limit.value,
+          offset: offset.value,
         },
       },
     })
@@ -73,8 +109,18 @@ async function load(): Promise<void> {
   }
 }
 
+// Any facet/sort change re-queries from the first page -- an offset carried over from a
+// DIFFERENT filter's result set would silently show a nonsensical page (e.g. "page 3" of a
+// filter that only has one page), so every filter/sort input resets `offset` before reloading.
+// Pagination (`goToNextPage`/`goToPrevPage`) is the only path that changes `offset` on purpose;
+// `offset` itself is watched separately below (last, or the reset here would fight the load).
+watch([includeSuperseded, kindFilter, actorFilter, sinceFilter, untilFilter, limit, sortBy, sortDir], () => {
+  offset.value = 0
+  load()
+})
+watch(offset, load)
+
 onMounted(load)
-watch([includeSuperseded, kindFilter, limit], load)
 // This tab is mounted only while its own tab panel is visible (App.vue uses v-if per tab), so
 // watching the shared `tick` here refetches only THIS view's data, on ledger change -- no other
 // tab does extra work because this one is open (SPEC.md sec 3: "no view refetches more than its
@@ -95,6 +141,12 @@ defineExpose({ reload: load })
     <div class="commission-picker">
       <label for="kind-filter">kind:</label>
       <input id="kind-filter" v-model="kindFilter" type="text" placeholder="(any)" style="width: 8rem" />
+      <label for="actor-filter">actor:</label>
+      <input id="actor-filter" v-model="actorFilter" type="text" placeholder="(any)" style="width: 8rem" />
+      <label for="since-filter">since:</label>
+      <input id="since-filter" v-model="sinceFilter" type="date" style="width: 9.5rem" />
+      <label for="until-filter">until:</label>
+      <input id="until-filter" v-model="untilFilter" type="date" style="width: 9.5rem" />
       <label class="toggle-row">
         <input v-model="includeSuperseded" type="checkbox" />
         show superseded rows
@@ -108,7 +160,15 @@ defineExpose({ reload: load })
       :rows="displayRows"
       :row-key="(r) => r.id as number"
       :superseded-ids="supersededIds"
+      :sort-by="sortBy"
+      :sort-dir="sortDir"
       empty-text="No ledger rows match this filter."
+      @sort-change="onSortChange"
     />
+    <div class="commission-picker pagination-row">
+      <button :disabled="!hasPrevPage" @click="goToPrevPage">Prev</button>
+      <span class="muted">page {{ pageNumber }} (offset {{ offset }})</span>
+      <button :disabled="!hasNextPage" @click="goToNextPage">Next</button>
+    </div>
   </section>
 </template>

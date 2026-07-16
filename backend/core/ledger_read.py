@@ -28,6 +28,18 @@ from config import PanelConfig
 
 _CURRENT_FILTER = "NOT EXISTS (SELECT 1 FROM ledger s WHERE s.supersedes = l.id)"
 
+# The sort-by-column facet (SPEC.md sec 2.1's "Board (browsing view)") is a closed vocabulary,
+# never a raw column name interpolated from the request -- an open `sort_by` string would be a
+# SQL-injection surface (params can't parametrize an identifier). Every value here maps to a
+# fixed, literal ORDER BY clause.
+_SORT_COLUMNS: dict[str, str] = {
+    "id": "l.id",
+    "ts": "l.ts",
+    "kind": "l.kind",
+    "actor": "p.name",
+}
+_SORT_DIRS = {"asc": "ASC", "desc": "DESC"}
+
 
 def watermark(cfg: PanelConfig) -> dict[str, Any]:
     with connect(cfg) as conn, conn.cursor() as cur:
@@ -47,15 +59,32 @@ def rows(
     actor_name: str | None = None,
     q: str | None = None,
     since_id: int | None = None,
+    since: str | None = None,
+    until: str | None = None,
     include_superseded: bool = False,
+    sort_by: str = "id",
+    sort_dir: str = "desc",
     limit: int = 200,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """The Board view's one query home (SPEC.md sec 2.1): every facet (kind, actor, free-text,
-    since-id for live-update tailing) is a WHERE clause added to the SAME query that also
-    supplies the facet's own count -- callers wanting a count call this with `limit` large
+    """The Board view's one query home (SPEC.md sec 2.1): every facet (kind, actor, date-range,
+    free-text, since-id for live-update tailing) is a WHERE clause added to the SAME query that
+    also supplies the facet's own count -- callers wanting a count call this with `limit` large
     enough, or call `count_rows` below with the identical filter arguments; there is no second,
-    independently-derived counting query."""
+    independently-derived counting query.
+
+    `since`/`until` are the date-range facet (SPEC.md sec 2.1): ISO-8601 timestamps (any form
+    Postgres's `timestamptz` input parser accepts -- a bare date like `2026-07-01` works too),
+    inclusive on both ends (`l.ts >= since`, `l.ts <= until`), applied as ordinary parametrized
+    WHERE clauses rather than a string-interpolated date literal. `sort_by`/`sort_dir` are the
+    column-sort facet: `sort_by` is validated against the closed `_SORT_COLUMNS` map (never a
+    raw identifier from the request) and raises `ValueError` on an unknown value, which the
+    route layer turns into a 422 rather than either silently falling back or building an
+    injectable query."""
+    if sort_by not in _SORT_COLUMNS:
+        raise ValueError(f"unknown sort_by {sort_by!r}; must be one of {sorted(_SORT_COLUMNS)}")
+    if sort_dir not in _SORT_DIRS:
+        raise ValueError(f"unknown sort_dir {sort_dir!r}; must be one of {sorted(_SORT_DIRS)}")
     where = ["1=1"] if include_superseded else [_CURRENT_FILTER]
     params: list[Any] = []
     if kind is not None:
@@ -70,10 +99,21 @@ def rows(
     if since_id is not None:
         where.append("l.id > %s")
         params.append(since_id)
+    if since is not None:
+        where.append("l.ts >= %s")
+        params.append(since)
+    if until is not None:
+        where.append("l.ts <= %s")
+        params.append(until)
+    order_col = _SORT_COLUMNS[sort_by]
+    order_dir = _SORT_DIRS[sort_dir]
+    # `l.id` as a secondary key makes the order stable (and deterministic across pages) when the
+    # primary sort column has ties -- `ts`/`kind`/`actor` all can.
+    order_by = f"{order_col} {order_dir}, l.id {order_dir}" if order_col != "l.id" else f"l.id {order_dir}"
     sql = (
         "SELECT l.id, l.kind, l.statement, l.ts, l.refs, l.supersedes, p.name AS actor_name "
         "FROM ledger l LEFT JOIN principal p ON p.id = l.actor "
-        f"WHERE {' AND '.join(where)} ORDER BY l.id DESC LIMIT %s OFFSET %s"
+        f"WHERE {' AND '.join(where)} ORDER BY {order_by} LIMIT %s OFFSET %s"
     )
     params.extend([limit, offset])
     with connect(cfg) as conn, conn.cursor() as cur:

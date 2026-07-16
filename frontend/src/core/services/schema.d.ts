@@ -11,7 +11,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Api Rows */
+        /**
+         * Api Rows
+         * @description `since`/`until` are the date-range facet (SPEC.md sec 2.1), `sort_by`/`sort_dir` the
+         *     column-sort facet -- both passed straight through to `ledger_read.rows`, which owns their
+         *     validation (a closed `sort_by`/`sort_dir` vocabulary; an unrecognized value is a 400, not a
+         *     silent fallback or an injectable identifier).
+         */
         get: operations["api_rows_api_rows_get"];
         put?: never;
         post?: never;
@@ -81,6 +87,29 @@ export interface paths {
         };
         /** Api Events */
         get: operations["api_events_api_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Profiles List
+         * @description Always available (read-only view), even when the write routes below are not mounted --
+         *     reuses `profiles_write.list_profiles`, the SAME tomlkit-based read `config.py`'s own profile
+         *     resolution logic conceptually mirrors, so this repo has one profile-listing implementation,
+         *     not two independently-drifting TOML readers.
+         */
+        get: operations["api_profiles_list_api_profiles_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -246,7 +275,11 @@ export interface operations {
                 actor?: string | null;
                 q?: string | null;
                 since_id?: number | null;
+                since?: string | null;
+                until?: string | null;
                 include_superseded?: boolean;
+                sort_by?: string;
+                sort_dir?: string;
                 limit?: number;
                 offset?: number;
             };
@@ -371,6 +404,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_profiles_list_api_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
                 };
             };
         };
