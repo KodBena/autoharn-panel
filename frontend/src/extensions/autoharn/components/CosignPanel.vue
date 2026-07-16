@@ -33,6 +33,19 @@ const independenceValues = computed(
 )
 const stampArmed = computed(() => healthState.health?.autoharn?.stamp_secret_armed ?? false)
 
+// In read-only/locked mode, POST /api/cosign is never mounted server-side (backend/app.py gates
+// the write router on `not cfg.read_only`) -- there is no live kernel refusal to relay, just a
+// route that doesn't exist. Gate the button here on healthState.health.read_only so a click never
+// reaches that missing route and surfaces a raw HTTP 405; the note below is this app's own honest
+// copy, not a fabricated stand-in for a kernel message (see row:459).
+const readOnlyKnown = computed(() => healthState.health?.read_only === true)
+const readOnlyReasonText = computed(() => {
+  const reason = healthState.health?.read_only_reason
+  if (reason === 'locked') return 'this deployment is locked read-only (PANEL_READONLY).'
+  if (reason === 'no-write-conduit') return 'this deployment has no write conduit configured (LED_BIN unset).'
+  return 'this deployment is read-only.'
+})
+
 const verdict = ref(verdicts.value[0] ?? '')
 const independence = ref(independenceValues.value.includes('self-review') ? 'self-review' : (independenceValues.value[0] ?? ''))
 const basis = ref('')
@@ -71,6 +84,10 @@ async function submit(): Promise<void> {
   <div class="cosign-inline" v-if="cosign && cosign.cosigned">
     <span class="badge badge-COSIGNED">co-signed</span>
     <span class="muted mono">by {{ cosign.by || '?' }} · review {{ cosign.review_id }} · {{ cosign.verdict }}</span>
+  </div>
+  <div class="cosign-inline" v-else-if="readOnlyKnown">
+    <button disabled title="writes disabled in this deployment">{{ label }} (disabled)</button>
+    <span class="muted cosign-readonly-note">read-only deployment -- writes disabled: {{ readOnlyReasonText }}</span>
   </div>
   <div class="cosign-inline" v-else>
     <button v-if="!open" @click="openForm">{{ label }}</button>
