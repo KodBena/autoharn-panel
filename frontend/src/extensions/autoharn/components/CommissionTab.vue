@@ -11,7 +11,37 @@ import { useLiveUpdates } from '../../../core/composables/useLiveUpdates'
 import { fmtTs, truncate } from '../../../utils/format'
 import CosignPanel from './CosignPanel.vue'
 import CitationText from '../../../core/components/CitationText.vue'
-import type { Commission, CommissionDetail, DecompositionItem } from '../services/types'
+import type { Commission, CommissionDetail, CommissionTrustLevel, DecompositionItem } from '../services/types'
+
+// Cycle-4 audit finding 7 (MODERATE): a commission's attribution strength was raw, unparsed
+// prose only -- no at-a-glance trust signal. Label/tooltip text per rung (design/USER-GPG-
+// TRUST-LAYER-FAQ.md's ladder): LAZY is the normal, expected case (informational tone, not
+// alarming); FULL and SIGNED are increasingly strong positive signals; FORGED is the one
+// alarming state (a real, checkable cryptographic mismatch); UNVERIFIABLE is a claimed-but-
+// uncheckable signature (neither a pass nor a forgery).
+const TRUST_LABELS: Record<CommissionTrustLevel, string> = {
+  lazy: 'LAZY',
+  full: 'FULL',
+  signed: 'SIGNED',
+  forged: 'FORGED-OR-CORRUPT',
+  unverifiable: 'UNVERIFIABLE',
+}
+const TRUST_TOOLTIPS: Record<CommissionTrustLevel, string> = {
+  lazy: 'LAZY -- vicarious transcription by the implementing agent. The normal, expected mode; carries no commissioner guarantee.',
+  full: "FULL -- the commissioner's own terminal wrote this row directly, with no live-session stamp. A rebuttable presumption, not cryptographic proof.",
+  signed: 'SIGNED -- FULL, plus a verified detached GPG signature over this exact statement. Cryptographic proof of authorship.',
+  forged: "FORGED-OR-CORRUPT -- a banked signature does NOT verify against this row's current statement bytes. A real, checkable mismatch.",
+  unverifiable: 'UNVERIFIABLE -- a signature is claimed but cannot be checked here (no committed key, or gpg unavailable).',
+}
+
+function trustLabel(level: CommissionTrustLevel): string {
+  return TRUST_LABELS[level] ?? level.toUpperCase()
+}
+
+function trustTooltip(level: CommissionTrustLevel, detail: string | null): string {
+  const base = TRUST_TOOLTIPS[level] ?? level
+  return detail ? `${base} (${detail})` : base
+}
 
 const commissions = ref<Commission[]>([])
 const selectedRow = ref<number | null>(null)
@@ -86,7 +116,8 @@ defineExpose({ reload: loadAll })
       <select id="commission-select" v-model.number="selectedRow">
         <option v-if="commissions.length === 0" disabled>(no commissions found)</option>
         <option v-for="c in commissions" :key="c.row_id" :value="c.row_id">
-          #{{ c.row_id }} — {{ c.item_count }} item(s) — {{ truncate(c.statement, 70) }}
+          #{{ c.row_id }} — [{{ trustLabel(c.trust_level) }}] — {{ c.item_count }} item(s) —
+          {{ truncate(c.statement, 60) }}
         </option>
       </select>
       <span class="muted" style="font-size: 0.78rem">{{ pickerNote }}</span>
@@ -102,6 +133,12 @@ defineExpose({ reload: loadAll })
         <div class="item-meta">
           row {{ detail.commission.id }} · {{ detail.commission.actor_name || '(unknown actor)' }} ·
           {{ fmtTs(detail.commission.ts) }}
+          <span
+            v-if="detail.trust_level"
+            class="badge"
+            :class="`badge-trust-${detail.trust_level}`"
+            :title="trustTooltip(detail.trust_level, detail.trust_detail)"
+          >{{ trustLabel(detail.trust_level) }}</span>
         </div>
         <!-- no-elision (SPEC.md sec 0): full commission statement, never clamped -->
         <div class="commission-text"><CitationText :text="detail.commission.statement" /></div>

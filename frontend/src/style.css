@@ -201,6 +201,19 @@ button.primary:hover { filter: brightness(1.08); }
 .badge-SUPERSEDED { background: var(--open-bg); color: var(--text-dim); border: 1px dashed var(--border); }
 .badge-locked { background: var(--danger); color: #fff; }
 
+/* Commission trust-level badges (cycle-4 audit finding 7): LAZY is the normal, expected case --
+   neutral/informational, same tone as badge-OPEN/badge-SUPERSEDED, never alarming. FULL is a
+   distinct, stronger-than-neutral signal (accent-colored, like badge-PARTIAL). SIGNED is a
+   strong positive (same ok- tokens as badge-COSIGNED). FORGED-OR-CORRUPT is the one alarming
+   state (same danger tokens as badge-AMBIGUOUS). UNVERIFIABLE is cautionary, not alarming (same
+   warn tokens as badge-WITNESSED) -- a claimed-but-uncheckable signature is neither a pass nor a
+   forgery. */
+.badge-trust-lazy { background: var(--open-bg); color: var(--open-text); }
+.badge-trust-full { background: var(--open-bg); color: var(--accent); border: 1px solid var(--accent-dim); }
+.badge-trust-signed { background: var(--ok-bg); color: var(--ok-text); border: 1px solid var(--ok-text); }
+.badge-trust-forged { background: var(--danger); color: #fff; }
+.badge-trust-unverifiable { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-text); }
+
 .witness-list {
   margin-top: 0.5rem;
   padding-left: 0.9rem;

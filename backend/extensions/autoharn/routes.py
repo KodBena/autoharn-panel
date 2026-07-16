@@ -62,10 +62,17 @@ def api_commission(request: Request, commission_row: int) -> dict[str, Any]:
     cfg = request.app.state.panel.cfg
     commission = ledger_read.ledger_row(cfg, commission_row)
     decomposition = ledger_read.decomposition_items(cfg, commission_row)
+    trust = (
+        ledger_read.commission_trust_for_row(cfg, commission_row, commission["actor_name"], commission["statement"])
+        if commission is not None
+        else {"trust_level": None, "trust_detail": None}
+    )
     return {
         "commission_row": commission_row,
         "commission": commission,
         "items": [_item_wire(item) for item in decomposition.items],
+        "trust_level": trust["trust_level"],
+        "trust_detail": trust["trust_detail"],
     }
 
 

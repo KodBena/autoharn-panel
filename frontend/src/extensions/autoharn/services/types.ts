@@ -11,12 +11,22 @@
 
 import type { LedgerRow } from '../../../core/services/types'
 
+// Commission attribution strength (cycle-4 audit finding 7, MODERATE; design/USER-GPG-TRUST-
+// LAYER-FAQ.md's ladder LAZY < FULL < SIGNED) -- `lazy`/`full`/`signed` are the three rungs, plus
+// two honest failure tiers a real deployment can hit once a signature IS banked: `forged` (a
+// checkable cryptographic mismatch -- LOUD, never silently shown as a lesser trust level) and
+// `unverifiable` (a signature is claimed but nothing can check it here -- no committed key, or
+// gpg unavailable). Backend: extensions.autoharn.ledger_read.commission_trust.
+export type CommissionTrustLevel = 'lazy' | 'full' | 'signed' | 'forged' | 'unverifiable'
+
 export interface Commission {
   row_id: number
   statement: string
   actor_name: string | null
   ts: string | null
   item_count: number
+  trust_level: CommissionTrustLevel
+  trust_detail: string | null
 }
 
 export type ItemStatus = 'OPEN' | 'WITNESSED' | 'PARTIAL' | 'COSIGNED' | 'AMBIGUOUS'
@@ -51,6 +61,8 @@ export interface CommissionDetail {
   commission_row: number
   commission: LedgerRow | null
   items: DecompositionItem[]
+  trust_level: CommissionTrustLevel | null
+  trust_detail: string | null
 }
 
 export interface WorkItemRow {

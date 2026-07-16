@@ -14,7 +14,9 @@ the core API to serve.
 """
 from __future__ import annotations
 
+import json
 import re
+import subprocess
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,6 +26,23 @@ from psycopg.rows import dict_row
 from config import PanelConfig
 from db import connect, jsonable
 from extensions.autoharn.disposition import WitnessFacts, derive_status, group_item_rows
+
+# CLAUDE.md point 11's disclosure prefix: every LAZY-mode commission's statement carries this
+# marker (possibly with more clauses after a semicolon -- row 374 is a live specimen), so a
+# simple prefix check is a robust, sufficient signal -- no fixed-marker-phrase parser needed
+# (commission-trust-badge, row:720 assumption).
+_LAZY_DISCLOSURE_PREFIX = "(vicarious transcription by the implementer"
+
+# Commission trust vocabulary this extension surfaces (design/USER-GPG-TRUST-LAYER-FAQ.md's
+# ladder LAZY < FULL < SIGNED, plus two honest failure tiers a real deployment can hit once a
+# signature IS banked -- never silently folded into "signed" or "lazy"):
+#   lazy          the implementer's own vicarious transcription (the normal, expected case)
+#   full          the commissioner's own terminal wrote the row directly, no live-session stamp
+#   signed        FULL, plus a verified detached GPG signature (verify-commission VERIFIED)
+#   forged        a banked signature does NOT verify (verify-commission FORGED-OR-CORRUPT) -- LOUD
+#   unverifiable  a signature is claimed but nothing here can check it (no committed key, or gpg
+#                 missing -- verify-commission's NO-COMMITTED-KEY/GPG-UNAVAILABLE refusals)
+COMMISSION_TRUST_LEVELS: tuple[str, ...] = ("lazy", "full", "signed", "forged", "unverifiable")
 
 # The kernel's own closed vocabularies (bootstrap/templates/led.tmpl `led review` usage text,
 # kernel/lineage/s15-schema.sql's `review_detail` check constraints in the autoharn deployment
@@ -640,11 +659,81 @@ class DecompositionItems:
     items: tuple[Item, ...]
 
 
+def _commission_signing_mode(actor_name: str | None, stamp_agent: str | None, statement: str) -> str:
+    """LAZY vs FULL -- mirrors autoharn's `bootstrap/templates/verify-commission.tmpl`
+    `signing_mode()` exactly: FULL iff the row's actor is literally the 'commissioner' principal
+    AND it carries no interception stamp (a bare-shell, no-live-session write); LAZY otherwise.
+    Deliberately the SAME two-signal test that verb uses (never re-derived a second,
+    potentially-diverging way -- commission-trust-badge, row:720 assumption), checked
+    defensively against the CLAUDE.md point 11 disclosure prefix first, so a stamped-but-
+    differently-actor-named row is never misreported FULL just because its own prose already
+    discloses vicarious transcription."""
+    if statement.lstrip().startswith(_LAZY_DISCLOSURE_PREFIX):
+        return "LAZY"
+    if actor_name == "commissioner" and not stamp_agent:
+        return "FULL"
+    return "LAZY"
+
+
+def commission_trust(
+    cfg: PanelConfig, row_id: int, actor_name: str | None, stamp_agent: str | None, statement: str
+) -> dict[str, Any]:
+    """`trust_level` (one of COMMISSION_TRUST_LEVELS) + a human `trust_detail` string (None for
+    the ordinary unsigned case). The common, today-universal case (every commission in this
+    deployment is LAZY, none has a banked signature) costs zero subprocess calls: `stamp_agent`/
+    `actor_name`/the disclosure prefix alone decide lazy-vs-full. A signature is only actually
+    checked -- by shelling out to THIS deployment's own `verify-commission` verb, never by
+    reimplementing GPG verification here a second time (commission-trust-badge, row:720
+    assumption) -- when a `.claude/commission-<id>.asc` is actually banked for this row."""
+    mode = _commission_signing_mode(actor_name, stamp_agent, statement)
+    asc_path = cfg.repo_root / ".claude" / f"commission-{row_id}.asc"
+    if not asc_path.exists():
+        return {"trust_level": mode.lower(), "trust_detail": None}
+
+    verify_bin = cfg.repo_root / "verify-commission"
+    try:
+        proc = subprocess.run(
+            [str(verify_bin), "--id", str(row_id), "--json"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        payload = json.loads(proc.stdout) if proc.stdout.strip() else {}
+    except Exception as e:  # noqa: BLE001 -- a broken verify-commission invocation degrades to an
+        # honest "can't tell" tier, never a crash and never a silently-guessed level.
+        return {"trust_level": "unverifiable", "trust_detail": f"verify-commission invocation failed: {e}"}
+
+    verdict = payload.get("verdict") or payload.get("refusal")
+    detail = payload.get("detail")
+    if verdict == "VERIFIED":
+        return {"trust_level": "signed", "trust_detail": detail}
+    if verdict == "FORGED-OR-CORRUPT":
+        return {"trust_level": "forged", "trust_detail": detail}
+    if verdict in ("NO-COMMITTED-KEY", "GPG-UNAVAILABLE"):
+        return {"trust_level": "unverifiable", "trust_detail": detail}
+    # Defensive fallback: an unrecognized payload shape (a future verify-commission verdict this
+    # backend doesn't know about yet) degrades to the ledger-only signal rather than guessing.
+    return {"trust_level": mode.lower(), "trust_detail": detail}
+
+
+def commission_trust_for_row(cfg: PanelConfig, row_id: int, actor_name: str | None, statement: str) -> dict[str, Any]:
+    """Same computation as `commission_trust`, for a caller (the single-commission detail route)
+    that already has `actor_name`/`statement` off the generic `ledger_row()` helper -- which does
+    NOT select `stamp_agent` (a commission-specific concern `ledger_row()` itself, shared by
+    non-commission obligation/witness reads, has no reason to carry). Fetches that one extra
+    column with its own tiny query rather than widening that shared helper's SELECT."""
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute("SELECT stamp_agent FROM ledger_current WHERE id = %s", (row_id,))
+        stamp_row = cur.fetchone()
+    stamp_agent = stamp_row["stamp_agent"] if stamp_row else None
+    return commission_trust(cfg, row_id, actor_name, stamp_agent, statement)
+
+
 def commissions(cfg: PanelConfig) -> list[dict[str, Any]]:
     with connect(cfg) as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT l.id, l.statement, l.ts, p.name AS actor_name
+            SELECT l.id, l.statement, l.ts, p.name AS actor_name, l.stamp_agent
             FROM ledger_current l LEFT JOIN principal p ON p.id = l.actor
             WHERE l.kind = 'commission'
             ORDER BY l.id
@@ -656,6 +745,7 @@ def commissions(cfg: PanelConfig) -> list[dict[str, Any]]:
         row_id = row["id"]
         item_count = len(item_id_groups(cfg, row_id))
         ts = row["ts"]
+        trust = commission_trust(cfg, row_id, row["actor_name"], row["stamp_agent"], row["statement"])
         out.append(
             {
                 "row_id": row_id,
@@ -663,6 +753,8 @@ def commissions(cfg: PanelConfig) -> list[dict[str, Any]]:
                 "actor_name": row["actor_name"],
                 "ts": ts.isoformat() if hasattr(ts, "isoformat") else ts,
                 "item_count": item_count,
+                "trust_level": trust["trust_level"],
+                "trust_detail": trust["trust_detail"],
             }
         )
     return out
