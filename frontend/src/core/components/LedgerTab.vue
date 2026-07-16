@@ -25,6 +25,13 @@ const rows = ref<Record<string, unknown>[]>([])
 const error = ref<string | null>(null)
 const includeSuperseded = ref(false)
 const kindFilter = ref('')
+// Live kind vocabulary for the dropdown below -- fetched from the backend's own facet-counts
+// query (SPEC.md sec 0 forbids a hand-copied kind enum in the frontend: the vocabulary lives in
+// the ledger, not in this file). Counts are over CURRENT rows only (ledger_read.facet_counts),
+// so a kind that only ever appears superseded won't show here -- an acceptable narrowing for a
+// filter dropdown, not a correctness bug: filtering TO a kind only superseded rows carry is not
+// a scenario the "show superseded rows" toggle changes the *available kinds* for anyway.
+const kindOptions = ref<string[]>([])
 const actorFilter = ref('')
 const sinceFilter = ref('')
 const untilFilter = ref('')
@@ -84,6 +91,12 @@ const displayRows = computed(() =>
   rows.value.map((r) => ({ ...r, ts_fmt: fmtTs(r.ts as string | null) })),
 )
 
+async function loadKindOptions(): Promise<void> {
+  const { data, error: err } = await api.GET('/api/rows/facet-counts')
+  if (err || !data) return
+  kindOptions.value = Object.keys(data).sort()
+}
+
 async function load(): Promise<void> {
   try {
     const { data, error: err } = await api.GET('/api/rows', {
@@ -120,7 +133,10 @@ watch([includeSuperseded, kindFilter, actorFilter, sinceFilter, untilFilter, lim
 })
 watch(offset, load)
 
-onMounted(load)
+onMounted(() => {
+  loadKindOptions()
+  load()
+})
 // This tab is mounted only while its own tab panel is visible (App.vue uses v-if per tab), so
 // watching the shared `tick` here refetches only THIS view's data, on ledger change -- no other
 // tab does extra work because this one is open (SPEC.md sec 3: "no view refetches more than its
@@ -140,7 +156,10 @@ defineExpose({ reload: load })
     </h2>
     <div class="commission-picker">
       <label for="kind-filter">kind:</label>
-      <input id="kind-filter" v-model="kindFilter" type="text" placeholder="(any)" style="width: 8rem" />
+      <select id="kind-filter" v-model="kindFilter" style="width: 8rem">
+        <option value="">(any)</option>
+        <option v-for="k in kindOptions" :key="k" :value="k">{{ k }}</option>
+      </select>
       <label for="actor-filter">actor:</label>
       <input id="actor-filter" v-model="actorFilter" type="text" placeholder="(any)" style="width: 8rem" />
       <label for="since-filter">since:</label>
