@@ -18,17 +18,29 @@ const props = defineProps<{ rowId: number }>()
 
 const row = ref<LedgerRow | null>(null)
 const error = ref<string | null>(null)
+// True once a 404 from GET /api/rows/{id} confirms "route resolved, id doesn't exist" -- kept
+// distinct from `error` (a generic network/server failure) so the template can render the
+// graceful in-app "no such row" message instead of the error banner for this one, expected case.
+const notFound = ref(false)
 const loading = ref(false)
 const showRaw = ref(false)
 
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
+  notFound.value = false
   try {
-    const { data, error: err } = await api.GET('/api/rows/{row_id}', {
+    const { data, error: err, response } = await api.GET('/api/rows/{row_id}', {
       params: { path: { row_id: props.rowId } },
     })
-    if (err) throw err
+    if (err) {
+      if (response.status === 404) {
+        notFound.value = true
+        row.value = null
+        return
+      }
+      throw err
+    }
     row.value = (data ?? null) as unknown as LedgerRow | null
   } catch (e) {
     row.value = null
@@ -78,6 +90,7 @@ defineExpose({ reload: load })
       <button @click="showRaw = !showRaw">{{ showRaw ? 'hide' : 'show' }} raw row</button>
       <pre v-if="showRaw" class="raw-disclosure">{{ JSON.stringify(row, null, 2) }}</pre>
     </template>
+    <div v-else-if="notFound" class="muted">no such row — item {{ rowId }} does not exist.</div>
     <div v-else-if="!loading && !error" class="muted">no such row.</div>
   </section>
 </template>

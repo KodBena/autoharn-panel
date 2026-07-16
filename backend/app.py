@@ -13,8 +13,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from config import PanelConfig, load_config
 from core import ledger_read as core_ledger_read
@@ -160,6 +163,33 @@ def create_app() -> FastAPI:
     # missing dist/ here is a real packaging/build-order defect, not a mode this backend degrades
     # gracefully around.
     app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")
+
+    # SPA history-fallback (cycle-2 consult finding 2): a hard reload / bookmark / shared link to
+    # a client-side route like /item/<id> is a GET the StaticFiles mount above can't resolve to a
+    # real file, so it would otherwise 404 with a raw `{"detail":"Not Found"}` body instead of the
+    # SPA shell -- the Vue router never gets a chance to run. FastAPI/Starlette dispatch routes
+    # (including `app.mount`, evaluated in registration order) BEFORE falling through to
+    # `app.exception_handlers`, so this is registered as a 404 handler, not another route: it only
+    # fires once every /api/* route and every real static asset above has already missed, and it
+    # always serves index.html so client-side routing (vue-router, history mode) takes over and
+    # renders its own in-app 404 or the matched view.
+    @app.exception_handler(StarletteHTTPException)
+    async def _spa_history_fallback(request: Request, exc: StarletteHTTPException):
+        if (
+            exc.status_code == 404
+            and request.method == "GET"
+            and not request.url.path.startswith("/api/")
+        ):
+            return FileResponse(_FRONTEND_DIR / "index.html")
+        # Registering a handler for StarletteHTTPException REPLACES FastAPI's own default
+        # handler for every HTTPException, not just this one path's -- re-raising `exc` here
+        # would NOT fall through to that default (this handler already IS the terminal exception
+        # path), it would propagate as an unhandled exception and turn every real API 404/other
+        # HTTPException into a raw 500 (caught in manual verification: GET /api/rows/<bad-id>
+        # regressed from its intended 404 to a 500 before this delegation was added). Delegate to
+        # FastAPI's own default so every other HTTPException-raising route is unaffected.
+        return await http_exception_handler(request, exc)
+
     return app
 
 
