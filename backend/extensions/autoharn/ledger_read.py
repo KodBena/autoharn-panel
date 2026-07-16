@@ -80,6 +80,27 @@ def autoharn_health(cfg: PanelConfig) -> dict[str, Any]:
     }
 
 
+def _fetch_jsonable_rows(
+    cfg: PanelConfig, sql: str, params: tuple[Any, ...] | None = None
+) -> list[dict[str, Any]]:
+    """Shared connect/execute/fetchall/jsonable-map plumbing for the read functions below whose
+    only real difference is which SQL they run (compliance-review finding 2, row:745/747):
+    `recent_ledger`, `review_gap`, `work_violations`, `findings_and_snags`, `question_status`,
+    `standing_decisions`, and `reviews_for_row` were each independently open-coding this exact
+    four-step shape. Pure de-duplication of the plumbing -- every caller keeps its own SQL/column
+    selection exactly as it was, so this changes nothing about what any endpoint returns.
+
+    Deliberately NOT used by `ledger_row`/`work_item`/`maintainer_cosigned`/`latest_review_id`/
+    `row_refs_text`/`commission_trust_for_row` (a `fetchone` single-row shape, not this one, or
+    `work_item`'s two-query-in-one-connection shape), nor by `work_items`/`commissions` (fetchall
+    plus per-row Python augmentation beyond a bare jsonable map) -- those are genuinely different
+    shapes and are left as they were."""
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+    return [jsonable(r) for r in rows]
+
+
 def recent_ledger(cfg: PanelConfig, n: int) -> list[dict[str, Any]]:
     # `n` feeds straight into a LIMIT clause below -- same vulnerability class as `/api/rows`'
     # `limit` (Postgres raises an unhandled 500 on a negative LIMIT; cycle-3 consult finding 2,
@@ -88,17 +109,15 @@ def recent_ledger(cfg: PanelConfig, n: int) -> list[dict[str, Any]]:
     # clean 400 rather than a raw DB error, matching `rows()`'s convention.
     if n < 1:
         raise ValueError(f"n must be >= 1, got {n}")
-    with connect(cfg) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT l.id, l.kind, l.statement, p.name AS actor_name, l.ts, l.stamp_verified
-            FROM ledger_current l LEFT JOIN principal p ON p.id = l.actor
-            ORDER BY l.id DESC LIMIT %s
-            """,
-            (n,),
-        )
-        rows = cur.fetchall()
-    return [jsonable(r) for r in rows]
+    return _fetch_jsonable_rows(
+        cfg,
+        """
+        SELECT l.id, l.kind, l.statement, p.name AS actor_name, l.ts, l.stamp_verified
+        FROM ledger_current l LEFT JOIN principal p ON p.id = l.actor
+        ORDER BY l.id DESC LIMIT %s
+        """,
+        (n,),
+    )
 
 
 def _work_blocked_by(cfg: PanelConfig) -> dict[str, list[str]]:
@@ -140,10 +159,7 @@ def work_items(cfg: PanelConfig) -> list[dict[str, Any]]:
 
 
 def review_gap(cfg: PanelConfig) -> list[dict[str, Any]]:
-    with connect(cfg) as conn, conn.cursor() as cur:
-        cur.execute("SELECT * FROM review_gap ORDER BY id")
-        rows = cur.fetchall()
-    return [jsonable(r) for r in rows]
+    return _fetch_jsonable_rows(cfg, "SELECT * FROM review_gap ORDER BY id")
 
 
 def work_violations(cfg: PanelConfig) -> list[dict[str, Any]]:
@@ -161,13 +177,11 @@ def work_violations(cfg: PanelConfig) -> list[dict[str, Any]]:
     (mirroring `review_gap`'s `id` column serving the same role in ReviewGapTab.vue) -- ordered by
     it so the same violation instance holds a stable position across polls, there being no id
     column of the view's own to order by."""
-    with connect(cfg) as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT violation, slug, detail, target_id FROM work_item_violations "
-            "ORDER BY target_id, violation, slug"
-        )
-        rows = cur.fetchall()
-    return [jsonable(r) for r in rows]
+    return _fetch_jsonable_rows(
+        cfg,
+        "SELECT violation, slug, detail, target_id FROM work_item_violations "
+        "ORDER BY target_id, violation, slug",
+    )
 
 
 def findings_and_snags(cfg: PanelConfig) -> list[dict[str, Any]]:
@@ -183,17 +197,15 @@ def findings_and_snags(cfg: PanelConfig) -> list[dict[str, Any]]:
     Same query shape as `recent_ledger` above (`ledger_current` LEFT JOIN `principal`, same
     column list) narrowed by a `kind IN (...)` filter -- reusing that established pattern rather
     than inventing a new one, per CLAUDE.md point 2's tool-reuse discipline."""
-    with connect(cfg) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT l.id, l.kind, l.statement, p.name AS actor_name, l.ts, l.stamp_verified
-            FROM ledger_current l LEFT JOIN principal p ON p.id = l.actor
-            WHERE l.kind IN ('finding', 'snag')
-            ORDER BY l.id DESC
-            """
-        )
-        rows = cur.fetchall()
-    return [jsonable(r) for r in rows]
+    return _fetch_jsonable_rows(
+        cfg,
+        """
+        SELECT l.id, l.kind, l.statement, p.name AS actor_name, l.ts, l.stamp_verified
+        FROM ledger_current l LEFT JOIN principal p ON p.id = l.actor
+        WHERE l.kind IN ('finding', 'snag')
+        ORDER BY l.id DESC
+        """,
+    )
 
 
 def question_status(cfg: PanelConfig) -> list[dict[str, Any]]:
@@ -206,17 +218,15 @@ def question_status(cfg: PanelConfig) -> list[dict[str, Any]]:
     cycle-4 audit finding 11 (MINOR): the Questions tab's table showed no snippet of the actual
     question TEXT, forcing a click-through just to learn what was asked (work item
     questions-inline-text, row:633)."""
-    with connect(cfg) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT qs.*, l.statement
-            FROM question_status qs
-            JOIN ledger_current l ON l.id = qs.question_id
-            ORDER BY qs.question_id
-            """
-        )
-        rows = cur.fetchall()
-    return [jsonable(r) for r in rows]
+    return _fetch_jsonable_rows(
+        cfg,
+        """
+        SELECT qs.*, l.statement
+        FROM question_status qs
+        JOIN ledger_current l ON l.id = qs.question_id
+        ORDER BY qs.question_id
+        """,
+    )
 
 
 def standing_decisions(cfg: PanelConfig) -> list[dict[str, Any]]:
@@ -233,10 +243,7 @@ def standing_decisions(cfg: PanelConfig) -> list[dict[str, Any]]:
     ledger_current, e.g. superseded/retracted), no actor/ts of its own; the full `statement`
     text is already in the payload (same as `findings_and_snags`), so the frontend needs no
     second fetch to render it in full. Ordered by id, same convention as `review_gap`."""
-    with connect(cfg) as conn, conn.cursor() as cur:
-        cur.execute("SELECT id, grade, statement FROM standing_decisions ORDER BY id")
-        rows = cur.fetchall()
-    return [jsonable(r) for r in rows]
+    return _fetch_jsonable_rows(cfg, "SELECT id, grade, statement FROM standing_decisions ORDER BY id")
 
 
 def ledger_row(cfg: PanelConfig, row_id: int) -> dict[str, Any] | None:
@@ -361,21 +368,19 @@ def reviews_for_row(cfg: PanelConfig, row_id: int) -> list[dict[str, Any]]:
     (SPEC.md sec 2.2): every live `review` row whose `regards` points at `row_id`, joined to its
     typed `review_detail` payload -- NOT narrowed to maintainer/attest the way `maintainer_cosigned`
     is, since the item view renders the full history, not just the discharge-relevant fact."""
-    with connect(cfg) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT r.id AS review_id, r.ts, p.name AS actor_name,
-                   d.verdict, d.independence, d.basis
-            FROM ledger_current r
-            JOIN review_detail d ON d.ledger_id = r.id
-            LEFT JOIN principal p ON p.id = r.actor
-            WHERE r.kind = 'review' AND r.regards = %s
-            ORDER BY r.id
-            """,
-            (row_id,),
-        )
-        rows = cur.fetchall()
-    return [jsonable(r) for r in rows]
+    return _fetch_jsonable_rows(
+        cfg,
+        """
+        SELECT r.id AS review_id, r.ts, p.name AS actor_name,
+               d.verdict, d.independence, d.basis
+        FROM ledger_current r
+        JOIN review_detail d ON d.ledger_id = r.id
+        LEFT JOIN principal p ON p.id = r.actor
+        WHERE r.kind = 'review' AND r.regards = %s
+        ORDER BY r.id
+        """,
+        (row_id,),
+    )
 
 
 @dataclass(frozen=True)
