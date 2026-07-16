@@ -348,7 +348,35 @@ class ParsedItemRow:
     ts: str
 
 
+def _row_token_matches(refs_text: str | None, commission_row: int) -> bool:
+    """True iff `refs_text` carries a well-formed, EXACT `row:<commission_row>` token -- the same
+    anchored-token discipline `_PANEL_ITEM_TOKEN_RE`/`_ROW_TOKEN_RE` use elsewhere in this module,
+    so a LIKE prefilter (`row:24` matching `row:247`) never survives into the returned set."""
+    wanted = str(commission_row)
+    for tok in (refs_text or "").split():
+        m = _ROW_TOKEN_RE.match(tok)
+        if m and m.group("id") == wanted:
+            return True
+    return False
+
+
 def fetch_parsed_item_rows(cfg: PanelConfig, commission_row: int) -> tuple[ParsedItemRow, ...]:
+    """Decomposition items for `commission_row`, read under BOTH conventions this deployment's
+    history carries (CLAUDE.md point 1 antecedent-audit finding, row:249):
+
+    1. The PoC-era `panel-item:<commission_row>:<item_id>` token grammar on a `note` row
+       (unchanged -- kept for any historical data that used it).
+    2. This deployment's actual, documented convention: a plain `work_opened` row whose `refs`
+       carries a bare `row:<commission_row>` token (`./led work open <slug> <title> --refs
+       row:<commission>`, CLAUDE.md point 1). Its `item_id` is the work item's own `work_slug`
+       (already unique-by-construction -- kernel/lineage's `work_opened` trigger refuses a second
+       opening act for the same slug, s29-pre-amendment.sql:390-391), and its implied witness is
+       the work item itself (`("work", work_slug)`) PLUS any other `row:`/`work:` witness tokens
+       already in its `refs` text (excluding the `row:<commission_row>` token itself, which names
+       the item's parent commission, not something that witnesses the item's own completion).
+    """
+    out: list[ParsedItemRow] = []
+
     pattern = f"%panel-item:{commission_row}:%"
     with connect(cfg) as conn, conn.cursor() as cur:
         cur.execute(
@@ -361,7 +389,6 @@ def fetch_parsed_item_rows(cfg: PanelConfig, commission_row: int) -> tuple[Parse
             (pattern,),
         )
         rows = cur.fetchall()
-    out: list[ParsedItemRow] = []
     for row in rows:
         item_id, witness_refs = parse_item_refs(row["refs"], commission_row)
         if item_id is None:
@@ -377,6 +404,43 @@ def fetch_parsed_item_rows(cfg: PanelConfig, commission_row: int) -> tuple[Parse
                 ts=ts.isoformat() if hasattr(ts, "isoformat") else ts,
             )
         )
+
+    pattern = f"%row:{commission_row}%"
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT l.id, l.refs, l.statement, l.ts, p.name AS actor_name, l.work_slug
+            FROM ledger_current l LEFT JOIN principal p ON p.id = l.actor
+            WHERE l.kind = 'work_opened' AND l.refs LIKE %s
+            ORDER BY l.id
+            """,
+            (pattern,),
+        )
+        rows = cur.fetchall()
+    for row in rows:
+        if not _row_token_matches(row["refs"], commission_row):
+            continue
+        slug = row["work_slug"]
+        if not slug:
+            continue
+        other_witnesses = [
+            (kind, ref)
+            for kind, ref in parse_witness_refs(row["refs"])
+            if not (kind == "row" and ref == str(commission_row))
+        ]
+        witness_refs = [("work", slug), *other_witnesses]
+        ts = row["ts"]
+        out.append(
+            ParsedItemRow(
+                row_id=row["id"],
+                item_id=slug,
+                witness_refs=tuple(witness_refs),
+                statement=row["statement"],
+                actor_name=row["actor_name"],
+                ts=ts.isoformat() if hasattr(ts, "isoformat") else ts,
+            )
+        )
+
     return tuple(out)
 
 
