@@ -1,6 +1,6 @@
 """tests/test_cosign_live.py -- both-polarity, live-ledger proof for this repo's `autoharn`
 extension write path (`extensions/autoharn/cosign.py`) and its live disposition read path
-(`extensions/autoharn/ledger_read.py`'s `decomposition_items`/`commissions`), against a scratch
+(`extensions/autoharn/ledger_adapter.py`'s `PostgresAutoharnLedgerReader.decomposition_items`/`commissions`), against a scratch
 schema/kernel pair. Ported from the autoharn PoC's `seen-red/panel-cosign/run_fixtures.py` (same
 cases, same ordering) into this repo's own pytest suite.
 
@@ -30,7 +30,10 @@ sys.path.insert(0, str(REPO / "backend"))
 import config as panel_config  # noqa: E402
 from config import ConnectionFacts, PanelConfig  # noqa: E402
 from extensions.autoharn import cosign as panel_cosign  # noqa: E402
-from extensions.autoharn import ledger_read  # noqa: E402
+from extensions.autoharn.ledger_adapter import PostgresAutoharnLedgerReader  # noqa: E402
+from extensions.autoharn.ports import AmbiguousItem, ResolvedItem  # noqa: E402
+
+_READER = PostgresAutoharnLedgerReader()
 
 # --- fixture-only environment resolution (standalone: no hardcoded host) -----------------------
 PGHOST = os.environ.get("EPISTEMIC_PGHOST") or os.environ.get("PGHOST")
@@ -107,7 +110,7 @@ def build_cfg() -> PanelConfig:
 
 
 def _item_count(cfg: PanelConfig, commission_row: int) -> int:
-    commissions_list = ledger_read.commissions(cfg)
+    commissions_list = _READER.commissions(cfg)
     entry = next((c for c in commissions_list if c["row_id"] == commission_row), None)
     assert entry is not None
     return entry["item_count"]
@@ -143,15 +146,15 @@ def test_green_item_row_fast_path(scratch_ledger: PanelConfig) -> None:
     cid = insert_commission("panel test-suite specimen commission")
     item1_row = insert_note(f"panel-item:{cid}:ITEM1", "ITEM1 -- no witnesses yet, item row itself co-signable")
 
-    res1 = panel_cosign.cosign(cfg, item1_row, "attest", "self-review", "maintainer endorses ITEM1 directly")
+    res1 = panel_cosign.cosign(cfg, _READER, item1_row, "attest", "self-review", "maintainer endorses ITEM1 directly")
     assert res1.ok, f"exit={res1.exit_code} stderr={res1.stderr!r}"
 
-    disc1 = ledger_read.maintainer_cosigned(cfg, item1_row)
+    disc1 = _READER.maintainer_cosigned(cfg, item1_row)
     assert disc1 is not None and disc1["actor_name"] == "maintainer" and disc1["verdict"] == "attest"
 
-    decomp1 = ledger_read.decomposition_items(cfg, cid)
+    decomp1 = _READER.decomposition_items(cfg, cid)
     item1 = next(i for i in decomp1.items if getattr(i, "item_id", None) == "ITEM1")
-    assert isinstance(item1, ledger_read.ResolvedItem)
+    assert isinstance(item1, ResolvedItem)
     assert item1.status == "COSIGNED"
 
 
@@ -162,19 +165,19 @@ def test_greenc_per_witness_tally(scratch_ledger: PanelConfig) -> None:
     w2 = insert_note("", "a plain note row, ITEM2's second row: witness")
     insert_note(f"panel-item:{cid}:ITEM2 row:{w1} row:{w2}", "ITEM2 -- two row: witnesses, neither cosigned yet")
 
-    decomp_pre = ledger_read.decomposition_items(cfg, cid)
+    decomp_pre = _READER.decomposition_items(cfg, cid)
     item2_pre = next(i for i in decomp_pre.items if getattr(i, "item_id", None) == "ITEM2")
     assert item2_pre.status == "WITNESSED"
 
-    res_w1 = panel_cosign.cosign(cfg, w1, "attest", "self-review", "maintainer endorses ITEM2's first witness")
+    res_w1 = panel_cosign.cosign(cfg, _READER, w1, "attest", "self-review", "maintainer endorses ITEM2's first witness")
     assert res_w1.ok
-    decomp_partial = ledger_read.decomposition_items(cfg, cid)
+    decomp_partial = _READER.decomposition_items(cfg, cid)
     item2_partial = next(i for i in decomp_partial.items if getattr(i, "item_id", None) == "ITEM2")
     assert item2_partial.status == "PARTIAL"
 
-    res_w2 = panel_cosign.cosign(cfg, w2, "attest", "self-review", "maintainer endorses ITEM2's second witness")
+    res_w2 = panel_cosign.cosign(cfg, _READER, w2, "attest", "self-review", "maintainer endorses ITEM2's second witness")
     assert res_w2.ok
-    decomp_cosigned = ledger_read.decomposition_items(cfg, cid)
+    decomp_cosigned = _READER.decomposition_items(cfg, cid)
     item2_cosigned = next(i for i in decomp_cosigned.items if getattr(i, "item_id", None) == "ITEM2")
     assert item2_cosigned.status == "COSIGNED"
 
@@ -183,7 +186,7 @@ def test_red_a_managerial_refused_unstamped(scratch_ledger: PanelConfig) -> None
     cfg = scratch_ledger
     cid = insert_commission("panel test-suite specimen commission (reda)")
     item_row = insert_note(f"panel-item:{cid}:ITEMA", "ITEMA target row for a refused co-sign")
-    res = panel_cosign.cosign(cfg, item_row, "attest", "managerial", "claiming independence with no stamp")
+    res = panel_cosign.cosign(cfg, _READER, item_row, "attest", "managerial", "claiming independence with no stamp")
     assert not res.ok
     assert "claiming independence" in res.stderr
     assert "self-review" in res.stderr
@@ -209,12 +212,12 @@ def test_redcprime_ambiguous_and_greend_prefix_adjacent(scratch_ledger: PanelCon
     item_count_before_dup = _item_count(cfg, cid)
     item1_dup_row = insert_note(f"panel-item:{cid}:ITEM1", "a duplicate ITEM1 claim, via a fresh row, NOT --supersedes")
 
-    decomp_amb = ledger_read.decomposition_items(cfg, cid)
+    decomp_amb = _READER.decomposition_items(cfg, cid)
     item1_amb = next(i for i in decomp_amb.items if getattr(i, "item_id", None) == "ITEM1")
-    assert isinstance(item1_amb, ledger_read.AmbiguousItem)
+    assert isinstance(item1_amb, AmbiguousItem)
     assert set(item1_amb.candidate_row_ids) == {item1_row, item1_dup_row}
 
-    res_amb_cosign = panel_cosign.cosign(cfg, item1_dup_row, "attest", "self-review",
+    res_amb_cosign = panel_cosign.cosign(cfg, _READER, item1_dup_row, "attest", "self-review",
                                           "endorsing one of the ambiguous candidates directly")
     assert res_amb_cosign.ok
 
@@ -225,9 +228,9 @@ def test_redcprime_ambiguous_and_greend_prefix_adjacent(scratch_ledger: PanelCon
     x1_row = insert_note(f"panel-item:{cid}:X1", "X1 -- minimal, no witnesses, renders OPEN")
     x10_row = insert_note(f"panel-item:{cid}:X10", "X10 -- X1 is a literal substring of this token")
 
-    commissions_list = ledger_read.commissions(cfg)
+    commissions_list = _READER.commissions(cfg)
     this_commission = next(c for c in commissions_list if c["row_id"] == cid)
-    decomp_final = ledger_read.decomposition_items(cfg, cid)
+    decomp_final = _READER.decomposition_items(cfg, cid)
     assert this_commission["item_count"] == len(decomp_final.items)
 
     ids_final = [i.item_id for i in decomp_final.items]

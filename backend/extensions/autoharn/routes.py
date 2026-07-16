@@ -11,13 +11,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from extensions.autoharn import cosign, ledger_read
-from extensions.autoharn.ledger_read import AmbiguousItem, ResolvedItem
+from extensions.autoharn import cosign
+from extensions.autoharn.ledger_adapter import parse_resource_fields
+from extensions.autoharn.ports import AmbiguousItem, Item, ObligationNode, ResolvedItem, ResolvedWitness
 
 router = APIRouter()
 
 
-def _witness_wire(rw: ledger_read.ResolvedWitness) -> dict[str, Any]:
+def _witness_wire(rw: ResolvedWitness) -> dict[str, Any]:
     return {
         "ref_kind": rw.ref_kind,
         "ref": rw.ref,
@@ -28,7 +29,7 @@ def _witness_wire(rw: ledger_read.ResolvedWitness) -> dict[str, Any]:
     }
 
 
-def _item_wire(item: ledger_read.Item) -> dict[str, Any]:
+def _item_wire(item: Item) -> dict[str, Any]:
     if isinstance(item, AmbiguousItem):
         return {
             "row_id": None,
@@ -54,16 +55,18 @@ def _item_wire(item: ledger_read.Item) -> dict[str, Any]:
 @router.get("/api/commissions")
 def api_commissions(request: Request) -> list[dict[str, Any]]:
     cfg = request.app.state.panel.cfg
-    return ledger_read.commissions(cfg)
+    reader = request.app.state.panel.autoharn_reader
+    return reader.commissions(cfg)
 
 
 @router.get("/api/commission/{commission_row:int}")
 def api_commission(request: Request, commission_row: int) -> dict[str, Any]:
     cfg = request.app.state.panel.cfg
-    commission = ledger_read.ledger_row(cfg, commission_row)
-    decomposition = ledger_read.decomposition_items(cfg, commission_row)
+    reader = request.app.state.panel.autoharn_reader
+    commission = reader.ledger_row(cfg, commission_row)
+    decomposition = reader.decomposition_items(cfg, commission_row)
     trust = (
-        ledger_read.commission_trust_for_row(cfg, commission_row, commission["actor_name"], commission["statement"])
+        reader.commission_trust_for_row(cfg, commission_row, commission["actor_name"], commission["statement"])
         if commission is not None
         else {"trust_level": None, "trust_detail": None}
     )
@@ -79,8 +82,9 @@ def api_commission(request: Request, commission_row: int) -> dict[str, Any]:
 @router.get("/api/ledger/recent")
 def api_ledger_recent(request: Request, n: int = 50) -> list[dict[str, Any]]:
     cfg = request.app.state.panel.cfg
+    reader = request.app.state.panel.autoharn_reader
     try:
-        return ledger_read.recent_ledger(cfg, n)
+        return reader.recent_ledger(cfg, n)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -88,28 +92,28 @@ def api_ledger_recent(request: Request, n: int = 50) -> list[dict[str, Any]]:
 @router.get("/api/work")
 def api_work(request: Request) -> list[dict[str, Any]]:
     cfg = request.app.state.panel.cfg
-    return ledger_read.work_items(cfg)
+    return request.app.state.panel.autoharn_reader.work_items(cfg)
 
 
 @router.get("/api/review-gap")
 def api_review_gap(request: Request) -> list[dict[str, Any]]:
     cfg = request.app.state.panel.cfg
-    return ledger_read.review_gap(cfg)
+    return request.app.state.panel.autoharn_reader.review_gap(cfg)
 
 
 @router.get("/api/questions")
 def api_questions(request: Request) -> list[dict[str, Any]]:
     cfg = request.app.state.panel.cfg
-    return ledger_read.question_status(cfg)
+    return request.app.state.panel.autoharn_reader.question_status(cfg)
 
 
 @router.get("/api/work-violations")
 def api_work_violations(request: Request) -> list[dict[str, Any]]:
     cfg = request.app.state.panel.cfg
-    return ledger_read.work_violations(cfg)
+    return request.app.state.panel.autoharn_reader.work_violations(cfg)
 
 
-def _obligation_node_wire(node: ledger_read.ObligationNode) -> dict[str, Any]:
+def _obligation_node_wire(node: ObligationNode) -> dict[str, Any]:
     return {
         "slug": node.slug,
         "title": node.title,
@@ -135,7 +139,7 @@ def api_obligation_tree(request: Request, slug: str) -> dict[str, Any]:
     discharge state), same graceful-degradation posture as this extension's other per-slug
     reads."""
     cfg = request.app.state.panel.cfg
-    tree = ledger_read.obligation_tree(cfg, slug)
+    tree = request.app.state.panel.autoharn_reader.obligation_tree(cfg, slug)
     if tree is None:
         raise HTTPException(status_code=404, detail=f"no work item {slug!r}")
     return _obligation_node_wire(tree)
@@ -144,13 +148,13 @@ def api_obligation_tree(request: Request, slug: str) -> dict[str, Any]:
 @router.get("/api/findings-snags")
 def api_findings_snags(request: Request) -> list[dict[str, Any]]:
     cfg = request.app.state.panel.cfg
-    return ledger_read.findings_and_snags(cfg)
+    return request.app.state.panel.autoharn_reader.findings_and_snags(cfg)
 
 
 @router.get("/api/standing-decisions")
 def api_standing_decisions(request: Request) -> list[dict[str, Any]]:
     cfg = request.app.state.panel.cfg
-    return ledger_read.standing_decisions(cfg)
+    return request.app.state.panel.autoharn_reader.standing_decisions(cfg)
 
 
 @router.get("/api/item/{row_id:int}/obligations")
@@ -164,19 +168,20 @@ def api_item_obligations(request: Request, row_id: int) -> dict[str, Any]:
     for a row that does not exist, and core's own row fetch is the one that 404s.
 
     `resource_fields` (cycle-4 audit finding 6, SERIOUS) is the ONE additional autoharn-semantic
-    enrichment this route carries beyond obligations/cosign/witnesses proper: `ledger_read.
+    enrichment this route carries beyond obligations/cosign/witnesses proper: `ledger_adapter.
     parse_resource_fields`'s structured read of a `resource:`-prefixed decision statement, `None`
     for any row that isn't one (or is a malformed one) -- core's own `GET /api/rows/{row_id}`
     keeps rendering the full raw statement regardless, so a parse failure here never hides
     anything, it just adds nothing."""
     cfg = request.app.state.panel.cfg
-    row = ledger_read.ledger_row(cfg, row_id)
+    reader = request.app.state.panel.autoharn_reader
+    row = reader.ledger_row(cfg, row_id)
     return {
         "row_id": row_id,
-        "cosign": ledger_read.cosign_fact(cfg, row_id),
-        "reviews": ledger_read.reviews_for_row(cfg, row_id),
-        "witnesses": [_witness_wire(rw) for rw in ledger_read.item_witnesses(cfg, row_id)],
-        "resource_fields": ledger_read.parse_resource_fields(row["statement"]) if row else None,
+        "cosign": reader.cosign_fact(cfg, row_id),
+        "reviews": reader.reviews_for_row(cfg, row_id),
+        "witnesses": [_witness_wire(rw) for rw in reader.item_witnesses(cfg, row_id)],
+        "resource_fields": parse_resource_fields(row["statement"]) if row else None,
     }
 
 
@@ -200,8 +205,9 @@ def build_write_router() -> APIRouter:
     @write_router.post("/api/cosign")
     def api_cosign(request: Request, req: CosignRequest) -> dict[str, Any]:
         cfg = request.app.state.panel.cfg
+        reader = request.app.state.panel.autoharn_reader
         try:
-            result = cosign.cosign(cfg, req.row_id, req.verdict, req.independence, req.basis)
+            result = cosign.cosign(cfg, reader, req.row_id, req.verdict, req.independence, req.basis)
         except cosign.CosignValidationError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         return {

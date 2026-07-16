@@ -14,8 +14,7 @@ import subprocess
 from dataclasses import dataclass
 
 from config import PanelConfig
-from extensions.autoharn import ledger_read
-from extensions.autoharn.ledger_read import INDEPENDENCE_VALUES, VERDICTS
+from extensions.autoharn.ports import INDEPENDENCE_VALUES, VERDICTS, AutoharnLedgerPort
 
 
 class CosignValidationError(Exception):
@@ -74,7 +73,9 @@ def ensure_principal_registered(cfg: PanelConfig, name: str, agent_class: str) -
     return _run_led(cfg, ["register-principal", name, agent_class], actor=None)
 
 
-def cosign(cfg: PanelConfig, row_id: int, verdict: str, independence: str, basis: str) -> CosignResult:
+def cosign(
+    cfg: PanelConfig, reader: AutoharnLedgerPort, row_id: int, verdict: str, independence: str, basis: str,
+) -> CosignResult:
     if verdict not in VERDICTS:
         raise CosignValidationError(f"verdict must be one of {VERDICTS}, got {verdict!r}")
     if independence not in INDEPENDENCE_VALUES:
@@ -85,7 +86,7 @@ def cosign(cfg: PanelConfig, row_id: int, verdict: str, independence: str, basis
     result = _run_led(cfg, ["review", str(row_id), verdict, independence, basis], actor=cfg.maintainer_principal)
     review_id: int | None = None
     if result.ok:
-        review_id = ledger_read.latest_review_id(cfg, regards=row_id, actor_name=cfg.maintainer_principal)
+        review_id = reader.latest_review_id(cfg, regards=row_id, actor_name=cfg.maintainer_principal)
     return CosignResult(
         ok=result.ok,
         exit_code=result.exit_code,

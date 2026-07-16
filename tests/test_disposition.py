@@ -1,6 +1,6 @@
 """tests/test_disposition.py -- both-polarity, no-database proof for
 `extensions.autoharn.disposition` (`derive_status`, `group_item_rows`) and
-`extensions.autoharn.ledger_read.parse_item_refs`. Ported from the autoharn PoC's
+`extensions.autoharn.ledger_adapter.parse_item_refs`. Ported from the autoharn PoC's
 `seen-red/panel-disposition/run_fixtures.py` (same cases, same RED/GREEN framing in each test's
 own docstring) into this repo's own pytest suite -- these three functions are pure (dataclasses,
 tuples, strings in and out; no SQL, no connection, no subprocess), so this is plain pytest, no
@@ -15,7 +15,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "backend"))
 
 from extensions.autoharn.disposition import WitnessFacts, derive_status, group_item_rows  # noqa: E402
-from extensions.autoharn.ledger_read import parse_item_refs  # noqa: E402
+from extensions.autoharn.ledger_adapter import parse_item_refs  # noqa: E402
 
 
 # ---- RED-shaped cases: derive_status/group_item_rows/parse_item_refs must NOT misclassify ----

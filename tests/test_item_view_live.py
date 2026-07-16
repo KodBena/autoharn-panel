@@ -1,5 +1,5 @@
 """tests/test_item_view_live.py -- live-DB proof for the item-view backend logic added by
-build-item-view (SPEC.md sec 2.2): `extensions.autoharn.ledger_read.reviews_for_row`/
+build-item-view (SPEC.md sec 2.2): `extensions.autoharn.ledger_adapter.PostgresAutoharnLedgerReader.reviews_for_row`/
 `item_witnesses` and the `GET /api/item/{row_id}/obligations` route they back. Same
 scratch-schema fixture pattern as tests/test_cosign_live.py -- SKIPPED, not failed, without a
 reachable Postgres host + sibling autoharn checkout. Pure, no-database tests for the sibling
@@ -22,7 +22,9 @@ sys.path.insert(0, str(REPO / "backend"))
 
 from config import ConnectionFacts, PanelConfig  # noqa: E402
 from extensions.autoharn import cosign as panel_cosign  # noqa: E402
-from extensions.autoharn import ledger_read  # noqa: E402
+from extensions.autoharn.ledger_adapter import PostgresAutoharnLedgerReader  # noqa: E402
+
+_READER = PostgresAutoharnLedgerReader()
 
 PGHOST = os.environ.get("EPISTEMIC_PGHOST") or os.environ.get("PGHOST")
 PGDB = os.environ.get("PANEL_TEST_PGDATABASE", "toy")
@@ -119,12 +121,12 @@ def scratch_ledger():
 def test_reviews_for_row_empty_then_populated(scratch_ledger: PanelConfig) -> None:
     cfg = scratch_ledger
     target = insert_note("", "a plain row a review will regard")
-    assert ledger_read.reviews_for_row(cfg, target) == []
+    assert _READER.reviews_for_row(cfg, target) == []
 
-    res = panel_cosign.cosign(cfg, target, "attest", "self-review", "maintainer endorses this row directly")
+    res = panel_cosign.cosign(cfg, _READER, target, "attest", "self-review", "maintainer endorses this row directly")
     assert res.ok, f"exit={res.exit_code} stderr={res.stderr!r}"
 
-    reviews = ledger_read.reviews_for_row(cfg, target)
+    reviews = _READER.reviews_for_row(cfg, target)
     assert len(reviews) == 1
     assert reviews[0]["actor_name"] == "maintainer"
     assert reviews[0]["verdict"] == "attest"
@@ -136,16 +138,16 @@ def test_item_witnesses_generic_no_panel_item_wrapper(scratch_ledger: PanelConfi
     w1 = insert_note("", "a witness row, no panel-item wrapper anywhere")
     holder = insert_note(f"row:{w1}", "a row citing a plain row: witness, not a decomposition item")
 
-    witnesses = ledger_read.item_witnesses(cfg, holder)
+    witnesses = _READER.item_witnesses(cfg, holder)
     assert len(witnesses) == 1
     assert witnesses[0].ref_kind == "row"
     assert witnesses[0].ref == str(w1)
     assert witnesses[0].facts.exists is True
     assert witnesses[0].cosign["cosigned"] is False
 
-    res = panel_cosign.cosign(cfg, w1, "attest", "self-review", "maintainer endorses the witness row")
+    res = panel_cosign.cosign(cfg, _READER, w1, "attest", "self-review", "maintainer endorses the witness row")
     assert res.ok
-    witnesses_after = ledger_read.item_witnesses(cfg, holder)
+    witnesses_after = _READER.item_witnesses(cfg, holder)
     assert witnesses_after[0].cosign["cosigned"] is True
     assert witnesses_after[0].cosign["by"] == "maintainer"
 
@@ -153,7 +155,7 @@ def test_item_witnesses_generic_no_panel_item_wrapper(scratch_ledger: PanelConfi
 def test_item_witnesses_dangling_ref_reported_not_fabricated(scratch_ledger: PanelConfig) -> None:
     cfg = scratch_ledger
     holder = insert_note("row:999999999", "a row citing a row id that does not exist")
-    witnesses = ledger_read.item_witnesses(cfg, holder)
+    witnesses = _READER.item_witnesses(cfg, holder)
     assert len(witnesses) == 1
     assert witnesses[0].facts.exists is False
     assert witnesses[0].resolved is None
@@ -186,7 +188,7 @@ def test_obligations_route_end_to_end(scratch_ledger: PanelConfig) -> None:
     # never a fabricated/partial shape (cycle-4 audit finding 6).
     assert body["resource_fields"] is None
 
-    res = panel_cosign.cosign(cfg, target, "attest", "self-review", "maintainer endorses the target row itself")
+    res = panel_cosign.cosign(cfg, _READER, target, "attest", "self-review", "maintainer endorses the target row itself")
     assert res.ok
     resp2 = client.get(f"/api/item/{target}/obligations")
     body2 = resp2.json()

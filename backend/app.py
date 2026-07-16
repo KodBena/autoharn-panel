@@ -32,7 +32,8 @@ from core.routes import build_profiles_write_router, router as core_router
 # below is conditional on that. A future second extension is imported here the same way.
 from extensions.autoharn import cosign as autoharn_cosign
 from extensions.autoharn import routes as autoharn_routes
-from extensions.autoharn.ledger_read import autoharn_health
+from extensions.autoharn.ledger_adapter import PostgresAutoharnLedgerReader
+from extensions.autoharn.ports import AutoharnLedgerPort
 
 _FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 # ^ `frontend/dist` is Vite's build output (`npm run build` in frontend/), never `frontend/`
@@ -70,6 +71,14 @@ class AppState:
         # `core.ledger_read`/`core.backend_surface` as modules (both deleted; their SQL now lives
         # in `core.ledger_adapter.PostgresCoreLedgerReader`, this Protocol's sole implementation).
         self.reader: CoreLedgerPort = PostgresCoreLedgerReader()
+        # AutoharnLedgerPort-typed, same convention, constructed once here regardless of whether
+        # `"autoharn"` ends up enabled in `cfg.extensions` (cheap: a frozen, fieldless class, no
+        # I/O at construction) -- every autoharn route/write path pulls this off
+        # `request.app.state.panel.autoharn_reader` instead of importing
+        # `extensions.autoharn.ledger_read` as a module (deleted; its SQL now lives in
+        # `extensions.autoharn.ledger_adapter.PostgresAutoharnLedgerReader`, this Protocol's sole
+        # implementation -- work item autoharn-adapter-acl-wrap, row 934).
+        self.autoharn_reader: AutoharnLedgerPort = PostgresAutoharnLedgerReader()
         self.broadcaster = Broadcaster()
         self.poll_task: asyncio.Task | None = None
 
@@ -137,7 +146,7 @@ def create_app() -> FastAPI:
     cfg = load_config()
 
     @app.get("/api/health")
-    def api_health() -> dict[str, Any]:
+    def api_health(request: Request) -> dict[str, Any]:
         health: dict[str, Any] = {
             "ok": True,
             "config_source": cfg.config_source,
@@ -150,7 +159,7 @@ def create_app() -> FastAPI:
             "available_profiles": list(cfg.available_profiles),
         }
         if cfg.extension_enabled("autoharn"):
-            health["autoharn"] = autoharn_health(cfg)
+            health["autoharn"] = request.app.state.panel.autoharn_reader.autoharn_health(cfg)
             health["maintainer_principal"] = cfg.maintainer_principal
         return health
 

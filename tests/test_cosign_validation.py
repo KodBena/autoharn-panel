@@ -15,8 +15,8 @@ subprocess layer fails the test loudly (an AssertionError from the trap) instead
 passing, hanging on a real subprocess call, or needing a live LED_BIN to even notice. One
 GREEN-shaped negative control (test_valid_input_reaches_run_led) proves the trap is a meaningful
 signal and not a fixture that never fires: valid input DOES reach `_run_led`, and its stub
-returns `ok=False` so cosign() short-circuits before the ok-branch's `ledger_read.
-latest_review_id` call -- keeping that test DB-free too. Pure Python: no database, no live
+returns `ok=False` so cosign() short-circuits before the ok-branch's reader-typed
+`latest_review_id` call -- keeping that test DB-free too. Pure Python: no database, no live
 subprocess, runs to completion with both PGHOST and LED_BIN unset.
 """
 from __future__ import annotations
@@ -31,7 +31,16 @@ sys.path.insert(0, str(REPO / "backend"))
 
 from config import ConnectionFacts, PanelConfig  # noqa: E402
 from extensions.autoharn import cosign  # noqa: E402
-from extensions.autoharn.ledger_read import INDEPENDENCE_VALUES, VERDICTS  # noqa: E402
+from extensions.autoharn.ledger_adapter import PostgresAutoharnLedgerReader  # noqa: E402
+from extensions.autoharn.ports import INDEPENDENCE_VALUES, VERDICTS  # noqa: E402
+
+# A real reader instance, never touched by any test in this file: every case here either raises
+# CosignValidationError before cosign() ever calls _run_led (which is what would eventually reach
+# the reader), or the ok=False stub short-circuits before the reader is used -- see
+# test_valid_input_reaches_run_led's own comment. Passing the real, stateless, no-constructor-
+# argument class (rather than a mock) keeps this file's own DB-free guarantee (module docstring)
+# intact: constructing PostgresAutoharnLedgerReader() does no I/O.
+_READER = PostgresAutoharnLedgerReader()
 
 
 def build_cfg() -> PanelConfig:
@@ -77,25 +86,25 @@ def trap_run_led(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_bad_verdict_raises_before_run_led(monkeypatch: pytest.MonkeyPatch) -> None:
     trap_run_led(monkeypatch)
     with pytest.raises(cosign.CosignValidationError):
-        cosign.cosign(build_cfg(), 1, "not-a-real-verdict", "self-review", "a basis")
+        cosign.cosign(build_cfg(), _READER, 1, "not-a-real-verdict", "self-review", "a basis")
 
 
 def test_bad_independence_raises_before_run_led(monkeypatch: pytest.MonkeyPatch) -> None:
     trap_run_led(monkeypatch)
     with pytest.raises(cosign.CosignValidationError):
-        cosign.cosign(build_cfg(), 1, "attest", "not-a-real-independence", "a basis")
+        cosign.cosign(build_cfg(), _READER, 1, "attest", "not-a-real-independence", "a basis")
 
 
 def test_empty_basis_raises_before_run_led(monkeypatch: pytest.MonkeyPatch) -> None:
     trap_run_led(monkeypatch)
     with pytest.raises(cosign.CosignValidationError):
-        cosign.cosign(build_cfg(), 1, "attest", "self-review", "")
+        cosign.cosign(build_cfg(), _READER, 1, "attest", "self-review", "")
 
 
 def test_whitespace_only_basis_raises_before_run_led(monkeypatch: pytest.MonkeyPatch) -> None:
     trap_run_led(monkeypatch)
     with pytest.raises(cosign.CosignValidationError):
-        cosign.cosign(build_cfg(), 1, "attest", "self-review", "   \t\n  ")
+        cosign.cosign(build_cfg(), _READER, 1, "attest", "self-review", "   \t\n  ")
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +116,7 @@ def test_whitespace_only_basis_raises_before_run_led(monkeypatch: pytest.MonkeyP
 def test_bad_verdict_message_names_value_and_vocabulary(monkeypatch: pytest.MonkeyPatch) -> None:
     trap_run_led(monkeypatch)
     with pytest.raises(cosign.CosignValidationError) as exc_info:
-        cosign.cosign(build_cfg(), 1, "not-a-real-verdict", "self-review", "a basis")
+        cosign.cosign(build_cfg(), _READER, 1, "not-a-real-verdict", "self-review", "a basis")
     message = str(exc_info.value)
     assert "not-a-real-verdict" in message
     for value in VERDICTS:
@@ -117,7 +126,7 @@ def test_bad_verdict_message_names_value_and_vocabulary(monkeypatch: pytest.Monk
 def test_bad_independence_message_names_value_and_vocabulary(monkeypatch: pytest.MonkeyPatch) -> None:
     trap_run_led(monkeypatch)
     with pytest.raises(cosign.CosignValidationError) as exc_info:
-        cosign.cosign(build_cfg(), 1, "attest", "not-a-real-independence", "a basis")
+        cosign.cosign(build_cfg(), _READER, 1, "attest", "not-a-real-independence", "a basis")
     message = str(exc_info.value)
     assert "not-a-real-independence" in message
     for value in INDEPENDENCE_VALUES:
@@ -135,7 +144,7 @@ def test_order_verdict_checked_before_independence(monkeypatch: pytest.MonkeyPat
     error (checked first in cosign.py) may surface."""
     trap_run_led(monkeypatch)
     with pytest.raises(cosign.CosignValidationError) as exc_info:
-        cosign.cosign(build_cfg(), 1, "not-a-real-verdict", "not-a-real-independence", "")
+        cosign.cosign(build_cfg(), _READER, 1, "not-a-real-verdict", "not-a-real-independence", "")
     assert str(exc_info.value).startswith("verdict must be one of")
 
 
@@ -144,7 +153,7 @@ def test_order_independence_checked_before_basis(monkeypatch: pytest.MonkeyPatch
     error (checked second) may surface, never the basis error."""
     trap_run_led(monkeypatch)
     with pytest.raises(cosign.CosignValidationError) as exc_info:
-        cosign.cosign(build_cfg(), 1, "attest", "not-a-real-independence", "")
+        cosign.cosign(build_cfg(), _READER, 1, "attest", "not-a-real-independence", "")
     assert str(exc_info.value).startswith("independence must be one of")
 
 
@@ -163,13 +172,13 @@ def test_valid_input_reaches_run_led(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(cosign, "_run_led", _record)
 
-    result = cosign.cosign(build_cfg(), 42, "attest", "self-review", "a genuine review basis")
+    result = cosign.cosign(build_cfg(), _READER, 42, "attest", "self-review", "a genuine review basis")
 
     assert len(calls) == 1
     args, actor = calls[0]
     assert args == ["review", "42", "attest", "self-review", "a genuine review basis"]
     assert actor == "maintainer"
     # the stub's ok=False means cosign() must short-circuit before the ok-branch's
-    # ledger_read.latest_review_id call -- this test stays DB-free too.
+    # reader-typed latest_review_id call -- this test stays DB-free too.
     assert result.ok is False
     assert result.review_id is None

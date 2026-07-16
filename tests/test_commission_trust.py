@@ -1,5 +1,5 @@
 """tests/test_commission_trust.py -- real test coverage for `commission_trust()`'s
-signed/forged/unverifiable branches (backend/extensions/autoharn/ledger_read.py, added by
+signed/forged/unverifiable branches (backend/extensions/autoharn/ledger_adapter.py, added by
 a389445 as part of spa-audit-cycle-4-fixes), closing the gap row:745's compliance review
 found and row:747 countersigned: "no .claude/commission-*.asc banked anywhere in the repo
 (asc_path.exists() is always False), and no test file mocks subprocess.run against
@@ -35,7 +35,10 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "backend"))
 
 from config import ConnectionFacts, PanelConfig  # noqa: E402
-from extensions.autoharn import ledger_read  # noqa: E402
+from extensions.autoharn import ledger_adapter  # noqa: E402
+from extensions.autoharn.ledger_adapter import PostgresAutoharnLedgerReader  # noqa: E402
+
+_READER = PostgresAutoharnLedgerReader()
 
 
 def build_cfg(repo_root: Path) -> PanelConfig:
@@ -79,7 +82,7 @@ class FakeCompletedProcess:
 def patch_subprocess_run(monkeypatch: pytest.MonkeyPatch, *, payload: dict[str, Any] | None = None,
                           raises: Exception | None = None, expected_row_id: int | None = None,
                           expected_verify_bin: Path | None = None) -> list[list[str]]:
-    """Replaces subprocess.run (the SAME module object ledger_read imported at its own top level,
+    """Replaces subprocess.run (the SAME module object ledger_adapter imported at its own top level,
     so patching it here reaches commission_trust's call site) with a fake that either raises
     `raises` or returns a FakeCompletedProcess whose stdout is `json.dumps(payload)`. Returns the
     list of calls made (each call's argv), so a test can also assert the invocation shape
@@ -98,7 +101,7 @@ def patch_subprocess_run(monkeypatch: pytest.MonkeyPatch, *, payload: dict[str, 
             raise raises
         return FakeCompletedProcess(json.dumps(payload) if payload is not None else "")
 
-    monkeypatch.setattr(ledger_read.subprocess, "run", fake_run)
+    monkeypatch.setattr(ledger_adapter.subprocess, "run", fake_run)
     return calls
 
 
@@ -111,9 +114,9 @@ def test_no_banked_asc_never_shells_out(tmp_path: Path, monkeypatch: pytest.Monk
     def explode(*_a, **_kw):
         raise AssertionError("subprocess.run must not be called when no .asc is banked")
 
-    monkeypatch.setattr(ledger_read.subprocess, "run", explode)
+    monkeypatch.setattr(ledger_adapter.subprocess, "run", explode)
     cfg = build_cfg(tmp_path)
-    result = ledger_read.commission_trust(cfg, 1, "someone", "abc123", "did the thing")
+    result = _READER.commission_trust(cfg, 1, "someone", "abc123", "did the thing")
     assert result == {"trust_level": "lazy", "trust_detail": None}
 
 
@@ -132,7 +135,7 @@ def test_banked_asc_verified_maps_to_signed(tmp_path: Path, monkeypatch: pytest.
         expected_row_id=row_id, expected_verify_bin=cfg.repo_root / "verify-commission",
     )
 
-    result = ledger_read.commission_trust(cfg, row_id, "commissioner", None, "signed commission text")
+    result = _READER.commission_trust(cfg, row_id, "commissioner", None, "signed commission text")
 
     assert result == {"trust_level": "signed", "trust_detail": "statement sha256=abc. Good signature"}
     assert len(calls) == 1
@@ -153,7 +156,7 @@ def test_banked_asc_forged_or_corrupt_maps_to_forged(tmp_path: Path, monkeypatch
         expected_row_id=row_id, expected_verify_bin=cfg.repo_root / "verify-commission",
     )
 
-    result = ledger_read.commission_trust(cfg, row_id, "commissioner", None, "tampered commission text")
+    result = _READER.commission_trust(cfg, row_id, "commissioner", None, "tampered commission text")
 
     assert result == {"trust_level": "forged", "trust_detail": "statement sha256=abc. BAD signature"}
 
@@ -175,7 +178,7 @@ def test_banked_asc_refusal_maps_to_unverifiable(tmp_path: Path, monkeypatch: py
         expected_row_id=row_id, expected_verify_bin=cfg.repo_root / "verify-commission",
     )
 
-    result = ledger_read.commission_trust(cfg, row_id, "commissioner", None, "commission text")
+    result = _READER.commission_trust(cfg, row_id, "commissioner", None, "commission text")
 
     assert result == {"trust_level": "unverifiable", "trust_detail": f"{refusal} detail text"}
 
@@ -191,7 +194,7 @@ def test_subprocess_invocation_failure_maps_to_unverifiable(tmp_path: Path, monk
     cfg = build_cfg(tmp_path)
     patch_subprocess_run(monkeypatch, raises=FileNotFoundError("verify-commission binary not found"))
 
-    result = ledger_read.commission_trust(cfg, row_id, "commissioner", None, "commission text")
+    result = _READER.commission_trust(cfg, row_id, "commissioner", None, "commission text")
 
     assert result["trust_level"] == "unverifiable"
     assert "verify-commission invocation failed" in result["trust_detail"]
@@ -209,9 +212,9 @@ def test_subprocess_non_json_stdout_maps_to_unverifiable(tmp_path: Path, monkeyp
     def fake_run(args, **kwargs):
         return FakeCompletedProcess("not valid json {{{")
 
-    monkeypatch.setattr(ledger_read.subprocess, "run", fake_run)
+    monkeypatch.setattr(ledger_adapter.subprocess, "run", fake_run)
 
-    result = ledger_read.commission_trust(cfg, row_id, "commissioner", None, "commission text")
+    result = _READER.commission_trust(cfg, row_id, "commissioner", None, "commission text")
 
     assert result["trust_level"] == "unverifiable"
     assert "verify-commission invocation failed" in result["trust_detail"]
@@ -240,6 +243,6 @@ def test_unrecognized_verdict_falls_back_to_signing_mode(
                   "detail": "unrecognized shape"},
     )
 
-    result = ledger_read.commission_trust(cfg, row_id, actor_name, stamp_agent, "commission text")
+    result = _READER.commission_trust(cfg, row_id, actor_name, stamp_agent, "commission text")
 
     assert result == {"trust_level": expected_mode, "trust_detail": "unrecognized shape"}

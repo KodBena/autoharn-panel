@@ -126,14 +126,16 @@ def connect_unrestricted(cfg: PanelConfig) -> Iterator[psycopg.Connection]:
     """Same as `connect()` but deliberately never issues `SET ROLE` -- for the rare, deliberate
     case where a read needs to see past a REVOKE placed on the ordinary subject role on purpose.
     The one relation this deployment REVOKEs from `cfg.role` on purpose is
-    `<kern_schema>.stamp_secret` (a cryptographic secret): `extensions/autoharn/ledger_read.py`'s
-    `autoharn_health` armed-check and `core/backend_surface.py`'s relation-count introspection
-    (spa-backend-surface-view, commission row:741) are this function's two callers, consolidated
-    here rather than each carrying its own private `psycopg.connect` call -- this module's own
-    header already claims to be "the ONE place this backend opens a Postgres connection"; before
-    this function existed that claim was already quietly false (extensions/autoharn/
-    ledger_read.py had its own module-local `_connect_unrestricted`), and a second caller needing
-    the identical pattern is the point at which that gets consolidated rather than tripled.
+    `<kern_schema>.stamp_secret` (a cryptographic secret): `extensions/autoharn/ledger_adapter.py`'s
+    `PostgresAutoharnLedgerReader.autoharn_health` armed-check and `core/ledger_adapter.py`'s
+    `PostgresCoreLedgerReader.backend_surface`/`relation_count` relation-count introspection
+    (spa-backend-surface-view, commission row:741) are this function's two callers today --
+    consolidated here rather than each carrying its own private `psycopg.connect` call, this
+    module's own header already claims to be "the ONE place this backend opens a Postgres
+    connection". (Corrected 2026-07-16, autoharn-adapter-acl-wrap row 934, per row:1041's flagged
+    hazard: this paragraph previously named `extensions/autoharn/ledger_read.py` and
+    `core/backend_surface.py`, both since deleted -- their SQL relocated verbatim into the two
+    `*_adapter.py` classes named above.)
 
     Still sets search_path (so unqualified relation names resolve the same way `connect()`'s
     callers expect); only the ROLE elevation/restriction step is skipped. This is a STRICTLY MORE

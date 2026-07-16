@@ -1,13 +1,14 @@
 """extensions.autoharn.ports -- the AutoharnLedgerPort seam: one `typing.Protocol` covering the
-entire DB-touching public surface of `extensions/autoharn/ledger_read.py` (backend structural
-audit, docs/consults/2026-07-16-backend-structural-audit/2026-07-16-backend-structural-audit.md,
-finding 2/recommendation 1; ledger row 894/959; work item ledger-ports-protocols, row 931).
-Interface only -- no adapter body lives here. A future `PostgresAutoharnLedgerReader` (a
-downstream work item, autoharn-adapter-acl-wrap) implements this Protocol by wrapping the existing
-module-level functions in `extensions/autoharn/ledger_read.py` near-mechanically, SQL moved
-verbatim (ADR-0004 minimal-touch); a `FakeAutoharnLedgerReader` (autoharn-ledger-fake) implements
-it in-memory for tests. Route handlers depend on this Protocol type, never on a concrete module
-import (ADR-0012 P2 seam/port discipline).
+entire DB-touching public surface that USED TO live as module-level functions in
+`extensions/autoharn/ledger_read.py` (backend structural audit, docs/consults/2026-07-16-backend-
+structural-audit/2026-07-16-backend-structural-audit.md, finding 2/recommendation 1; ledger row
+894/959; work item ledger-ports-protocols, row 931). Interface only -- no adapter body lives here.
+`PostgresAutoharnLedgerReader` (work item autoharn-adapter-acl-wrap, row 934) now IS the sole
+implementation of this Protocol, at `extensions/autoharn/ledger_adapter.py` -- `ledger_read.py` is
+gone, its SQL relocated verbatim into that one class (ADR-0004 minimal-touch); a
+`FakeAutoharnLedgerReader` (autoharn-ledger-fake, row 937) implements it in-memory for tests. Route
+handlers depend on this Protocol type, never on a concrete module import (ADR-0012 P2 seam/port
+discipline).
 
 ENFORCEMENT MECHANISM (the omega precedent -- docs/omega-observatory/2026-07-15-structural-reap.md
 entry 2, `backend/repositories/ports.py`'s own documented technique in the maintainer's private
@@ -18,25 +19,27 @@ from `psycopg`, nothing from this project's `db` module. A reviewer (or a script
 boundary holds by grepping this file's import block; no framework, no DI container, is needed to
 assert it.
 
-DATACLASS DUPLICATION (disclosed, not hidden -- ledger row 979): every dataclass below
-(`ObligationNode`, `WitnessFacts`, `ResolvedWitness`, `ParsedItemRow`, `ResolvedItem`,
-`AmbiguousItem`, `DecompositionItems`) is a field-for-field copy of its real current definition in
-`extensions/autoharn/ledger_read.py` (or, for `WitnessFacts`, `extensions/autoharn/disposition.py`
--- its actual current home) -- not an import of it. Importing any of them would mean importing a
-module that imports `db`, which imports `psycopg`, defeating the import-boundary this file exists
-to hold. This Protocol's own copies are the frozen CONTRACT shape; a downstream item is expected to
-make one location canonical and have the other alias/import it, collapsing the duplication once the
-adapter exists.
+DATACLASS DUPLICATION -- COLLAPSED for six of the seven (was disclosed at ledger row 979, resolved
+at row 934): `ObligationNode`, `ResolvedWitness`, `ParsedItemRow`, `ResolvedItem`, `AmbiguousItem`,
+`DecompositionItems` were originally field-for-field copies of `extensions/autoharn/ledger_read.py`'s
+own definitions, kept separate because importing that module would have meant importing `db`, which
+imports `psycopg`, defeating the import-boundary this file exists to hold. `autoharn-adapter-acl-
+wrap` (row 934) did exactly what this note originally invited: `ledger_read.py` is gone, and the six
+dataclasses below are now the ONE canonical definitions -- `extensions/autoharn/ledger_adapter.py`'s
+`PostgresAutoharnLedgerReader` imports them directly from here rather than carrying its own copies.
+`WitnessFacts` is the one NOT collapsed by that item: its real, permanent home is
+`extensions/autoharn/disposition.py` (a separate, pure module `ledger_read.py`'s deletion did not
+touch), so the copy below remains a second, deliberate duplicate of THAT module's `WitnessFacts` --
+`ledger_adapter.py` imports THIS copy (not disposition's) so its own method bodies type-check
+against this Protocol's own declared signatures, mirroring `FakeAutoharnLedgerReader`'s identical,
+already-shipped choice (row 937).
 
-VOCABULARY RELOCATION (ledger row 927/979): the six closed vocabularies below
+VOCABULARY RELOCATION -- COMPLETED (ledger row 927/979): the six closed vocabularies below
 (`COMMISSION_TRUST_LEVELS`, `VERDICTS`, `INDEPENDENCE_VALUES`, `DISCHARGE_GRADES`,
-`STATUS_VALUES`, `DISCHARGE_STATES`) are today module constants in
-`extensions/autoharn/ledger_read.py`, consumed by both it and `cosign.py`. Per row 927 they belong
-here as CONTRACT vocabulary, not DB logic -- defined here now, value-identical to their current
-definitions. This item's own scope is additive-only (it does not touch `ledger_read.py`/
-`cosign.py`), so the two locations are a deliberate, temporary duplication until the downstream
-item `autoharn-adapter-acl-wrap` (row 927's own "relocate ... in item 5") physically removes the
-old copies and repoints their consumers at this module.
+`STATUS_VALUES`, `DISCHARGE_STATES`) were module constants in `extensions/autoharn/ledger_read.py`
+until `autoharn-adapter-acl-wrap` (row 934) deleted that file; this module is now their sole home,
+imported by `ledger_adapter.py` (`VERDICTS`/`INDEPENDENCE_VALUES`, the only two actually read at
+runtime there) and `cosign.py` (`VERDICTS`/`INDEPENDENCE_VALUES`, for request validation).
 """
 from __future__ import annotations
 
@@ -173,20 +176,24 @@ class DecompositionItems:
 
 
 class AutoharnLedgerPort(Protocol):
-    """The DB-touching public surface of `extensions/autoharn/ledger_read.py`, as one seam
-    (`ledger-ports-protocols`'s own "2 Protocols, not 6" mandate -- one per existing core/autoharn
-    extension boundary, SPEC.md sec 4). Every method below takes `cfg: PanelConfig` as its own
-    connection/config handle, exactly as the module-level functions it mirrors do today.
+    """The DB-touching public surface that USED TO be `extensions/autoharn/ledger_read.py`'s own
+    module-level functions (deleted at `autoharn-adapter-acl-wrap`, row 934 -- their SQL now lives
+    in `extensions/autoharn/ledger_adapter.py`'s `PostgresAutoharnLedgerReader`, this Protocol's
+    sole implementation), as one seam (`ledger-ports-protocols`'s own "2 Protocols, not 6" mandate
+    -- one per existing core/autoharn extension boundary, SPEC.md sec 4). Every method below takes
+    `cfg: PanelConfig` as its own connection/config handle, exactly as
+    `PostgresAutoharnLedgerReader`'s methods do; a conforming adapter/fake needs no other shared
+    state.
 
     NOT on this Protocol -- and deliberately so (ledger row 981): `parse_item_refs`,
-    `parse_witness_refs`, and `parse_resource_fields`, the three PURE functions in
-    `extensions/autoharn/ledger_read.py` that take no `cfg` and perform zero I/O. Forcing
-    well-factored pure code onto a DB-swapping interface buys nothing -- they stay plain functions,
-    callable directly by whatever adapter or test needs them, with no fake required to exercise
-    them. `commission_trust`/`commission_trust_for_row` ARE on this Protocol despite issuing no SQL
-    (they shell out to `verify-commission` and check a filesystem path instead) -- real,
-    non-deterministic I/O a test double needs to fake exactly as much as a DB call, unlike the three
-    excluded parsers.
+    `parse_witness_refs`, and `parse_resource_fields`, the three PURE functions now living as plain
+    module functions in `extensions/autoharn/ledger_adapter.py` that take no `cfg` and perform zero
+    I/O. Forcing well-factored pure code onto a DB-swapping interface buys nothing -- they stay
+    plain functions, callable directly by whatever adapter or test needs them, with no fake
+    required to exercise them. `commission_trust`/`commission_trust_for_row` ARE on this Protocol
+    despite issuing no SQL (they shell out to `verify-commission` and check a filesystem path
+    instead) -- real, non-deterministic I/O a test double needs to fake exactly as much as a DB
+    call, unlike the three excluded parsers.
     """
 
     def autoharn_health(self, cfg: PanelConfig) -> dict[str, Any]:

@@ -1,5 +1,5 @@
 """tests/test_item_view.py -- pure, no-database proof for
-`extensions.autoharn.ledger_read.parse_witness_refs`, added by build-item-view (SPEC.md sec
+`extensions.autoharn.ledger_adapter.parse_witness_refs`, added by build-item-view (SPEC.md sec
 2.2). Live-DB proof for `reviews_for_row`/`item_witnesses`/the `GET /api/item/{row_id}/
 obligations` route lives in the SEPARATE tests/test_item_view_live.py -- a module-level
 `pytestmark` skipif (the same pattern test_cosign_live.py uses) applies to EVERY test in its
@@ -14,7 +14,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "backend"))
 
-from extensions.autoharn.ledger_read import parse_resource_fields, parse_witness_refs  # noqa: E402
+from extensions.autoharn.ledger_adapter import parse_resource_fields, parse_witness_refs  # noqa: E402
 
 
 # Same RED/GREEN framing test_disposition.py uses for its sibling parser (parse_item_refs) --

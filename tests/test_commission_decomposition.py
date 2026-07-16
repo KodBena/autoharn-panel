@@ -2,7 +2,7 @@
 (row:249): the Commission decomposition view (`GET /api/commissions`, `GET /api/commission/{id}`)
 reported '0 items' for every commission whose children were plain `work_opened` rows with a bare
 `row:<commission_row>` `--refs` token (this deployment's actual, documented CLAUDE.md point 1
-convention) -- `extensions.autoharn.ledger_read.fetch_parsed_item_rows` only ever recognized the
+convention) -- `extensions.autoharn.ledger_adapter.PostgresAutoharnLedgerReader.fetch_parsed_item_rows` only ever recognized the
 PoC-era `panel-item:<commission_row>:<item_id>` token grammar on a `note` row, which has ZERO live
 specimens in this deployment (see row:328's finding). This module proves the ADDITIVE fix: BOTH
 conventions are now recognized, merged into one `items` list.
@@ -44,7 +44,10 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "backend"))
 
 from config import ConnectionFacts, PanelConfig  # noqa: E402
-from extensions.autoharn import ledger_read  # noqa: E402
+from extensions.autoharn.ledger_adapter import PostgresAutoharnLedgerReader  # noqa: E402
+from extensions.autoharn.ports import ResolvedItem  # noqa: E402
+
+_READER = PostgresAutoharnLedgerReader()
 
 PGHOST = os.environ.get("EPISTEMIC_PGHOST") or os.environ.get("PGHOST")
 PGDB = os.environ.get("PANEL_TEST_PGDATABASE", "toy")
@@ -198,17 +201,17 @@ def test_plain_work_opened_children_are_counted(scratch_ledger: PanelConfig) -> 
         refs=f"row:{commission_row}", work_slug="build-the-thing",
     )
 
-    commissions = {c["row_id"]: c for c in ledger_read.commissions(cfg)}
+    commissions = {c["row_id"]: c for c in _READER.commissions(cfg)}
     assert commission_row in commissions
     assert commissions[commission_row]["item_count"] == 1, (
         "plain work_opened+refs=row:<commission> child was not counted -- the regression this "
         "fix targets"
     )
 
-    decomposition = ledger_read.decomposition_items(cfg, commission_row)
+    decomposition = _READER.decomposition_items(cfg, commission_row)
     assert len(decomposition.items) == 1
     item = decomposition.items[0]
-    assert isinstance(item, ledger_read.ResolvedItem)
+    assert isinstance(item, ResolvedItem)
     assert item.item_id == "build-the-thing"
     assert item.row_id == child_row
     # No witnesses declared beyond the implicit work-item self-witness -> not yet closed -> OPEN.
@@ -231,14 +234,14 @@ def test_panel_item_and_work_opened_conventions_coexist(scratch_ledger: PanelCon
         refs=f"row:{commission_row}", work_slug="new-style-item",
     )
 
-    decomposition = ledger_read.decomposition_items(cfg, commission_row)
+    decomposition = _READER.decomposition_items(cfg, commission_row)
     item_ids = {item.item_id for item in decomposition.items}
     assert item_ids == {"X1", "new-style-item"}
     by_id = {item.item_id: item for item in decomposition.items}
     assert by_id["X1"].row_id == note_child
     assert by_id["new-style-item"].row_id == work_child
 
-    commissions = {c["row_id"]: c for c in ledger_read.commissions(cfg)}
+    commissions = {c["row_id"]: c for c in _READER.commissions(cfg)}
     assert commissions[commission_row]["item_count"] == 2
 
 
@@ -252,7 +255,7 @@ def test_work_opened_item_witnessed_when_closed(scratch_ledger: PanelConfig) -> 
         "work_opened", "work_opened: closable-item -- an item that will be closed",
         refs=f"row:{commission_row}", work_slug="closable-item",
     )
-    before = ledger_read.decomposition_items(cfg, commission_row).items
+    before = _READER.decomposition_items(cfg, commission_row).items
     assert before[0].status == "OPEN"
 
     witness_row = insert_row("note", "closable-item's shipped witness")
@@ -263,7 +266,7 @@ def test_work_opened_item_witnessed_when_closed(scratch_ledger: PanelConfig) -> 
     )
     assert r.returncode == 0, r.stderr
 
-    after = ledger_read.decomposition_items(cfg, commission_row).items
+    after = _READER.decomposition_items(cfg, commission_row).items
     assert len(after) == 1
     assert after[0].status == "WITNESSED"
 
@@ -287,12 +290,12 @@ def test_live_commission_48_specimen_read_only() -> None:
         pytest.skip("no deployment.json found at repo root")
 
     try:
-        decomposition = ledger_read.decomposition_items(cfg, 48)
+        decomposition = _READER.decomposition_items(cfg, 48)
     except Exception as exc:  # pragma: no cover - environment-dependent
         pytest.skip(f"production ledger not reachable from this environment: {exc}")
 
     # Stable/idempotent: re-reading must not change the answer (read-only, no mutation happened).
-    decomposition_again = ledger_read.decomposition_items(cfg, 48)
+    decomposition_again = _READER.decomposition_items(cfg, 48)
     assert len(decomposition.items) == len(decomposition_again.items)
     # Honest current-state assertion (see docstring): no structured refs exist for row 48 yet.
     assert len(decomposition.items) == 0
