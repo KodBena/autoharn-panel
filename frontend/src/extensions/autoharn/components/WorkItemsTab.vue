@@ -20,8 +20,8 @@ const columns: Column[] = [
   { key: 'slug', label: 'slug', mono: true, width: '14rem' },
   { key: 'state', label: 'state', width: '6rem' },
   { key: 'claimant_name', label: 'claimant', width: '8rem' },
-  { key: 'resolution', label: 'resolution', width: '10rem' },
-  { key: 'title', label: 'title', width: '3fr' },
+  { key: 'resolution', label: 'resolution', width: '10rem', richText: true },
+  { key: 'title', label: 'title', width: '3fr', richText: true },
 ]
 
 async function load(): Promise<void> {

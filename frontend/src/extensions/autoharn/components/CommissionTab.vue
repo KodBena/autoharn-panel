@@ -10,6 +10,7 @@ import { api } from '../../../core/services/api-client'
 import { useLiveUpdates } from '../../../core/composables/useLiveUpdates'
 import { fmtTs, truncate } from '../../../utils/format'
 import CosignPanel from './CosignPanel.vue'
+import CitationText from '../../../core/components/CitationText.vue'
 import type { Commission, CommissionDetail, DecompositionItem } from '../services/types'
 
 const commissions = ref<Commission[]>([])
@@ -95,7 +96,7 @@ defineExpose({ reload: loadAll })
           {{ fmtTs(detail.commission.ts) }}
         </div>
         <!-- no-elision (SPEC.md sec 0): full commission statement, never clamped -->
-        <div class="commission-text">{{ detail.commission.statement }}</div>
+        <div class="commission-text"><CitationText :text="detail.commission.statement" /></div>
 
         <div class="item-list">
           <p v-if="detail.items.length === 0" class="empty-note">

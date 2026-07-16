@@ -12,6 +12,7 @@ import { onMounted, ref, watch } from 'vue'
 import { api } from '../services/api-client'
 import type { LedgerRow } from '../services/types'
 import { fmtTs } from '../../utils/format'
+import CitationText from './CitationText.vue'
 
 const props = defineProps<{ rowId: number }>()
 
@@ -58,7 +59,7 @@ defineExpose({ reload: load })
         <dd class="mono">{{ fmtTs(row.ts) }}</dd>
         <dt>statement</dt>
         <!-- no-elision (SPEC.md sec 0): full text, wraps, never clipped -->
-        <dd class="statement-text">{{ row.statement }}</dd>
+        <dd class="statement-text"><CitationText :text="row.statement" /></dd>
         <dt>refs (raw)</dt>
         <dd class="statement-text mono">{{ row.refs || '(none)' }}</dd>
         <dt>refs → rows</dt>

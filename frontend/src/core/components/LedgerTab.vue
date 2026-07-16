@@ -40,7 +40,7 @@ const columns: Column[] = [
   { key: 'kind', label: 'kind', width: '8rem', sortKey: 'kind' },
   { key: 'actor_name', label: 'actor', width: '9rem', sortKey: 'actor' },
   { key: 'ts_fmt', label: 'ts', mono: true, width: '11rem', sortKey: 'ts' },
-  { key: 'statement', label: 'statement', width: '3fr' },
+  { key: 'statement', label: 'statement', width: '3fr', richText: true },
 ]
 
 // A full page (rows.length === limit) means there MAY be a next page -- this endpoint has no

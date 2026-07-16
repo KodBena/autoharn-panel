@@ -10,6 +10,7 @@ import { onMounted, reactive, ref, watch } from 'vue'
 import { api } from '../../../core/services/api-client'
 import type { Column } from '../../../core/components/DataTable.vue'
 import DataTable from '../../../core/components/DataTable.vue'
+import CitationText from '../../../core/components/CitationText.vue'
 import { useLiveUpdates } from '../../../core/composables/useLiveUpdates'
 import type { LedgerRow } from '../../../core/services/types'
 
@@ -76,7 +77,9 @@ defineExpose({ reload: load })
     <div v-for="(v, id) in expanded" :key="id" class="commission-text" style="margin-top: 0.5rem">
       <template v-if="v === 'loading'">loading row {{ id }}…</template>
       <template v-else-if="v === 'error'">could not load row {{ id }}</template>
-      <template v-else>#{{ v.id }} · {{ v.kind }} · {{ v.actor_name || '(unknown actor)' }} — {{ v.statement }}</template>
+      <template v-else
+        >#{{ v.id }} · {{ v.kind }} · {{ v.actor_name || '(unknown actor)' }} — <CitationText :text="v.statement"
+      /></template>
     </div>
   </section>
 </template>
