@@ -13,3 +13,17 @@ __pycache__/
 # lesson 1). Append-if-missing; safe to re-run.
 .claude/logs/
 # <<< autoharn scaffold-owned churn <<<
+law/
+.claude/
+deployment.json
+keys/
+attest-doc
+attestations/
+audit
+distance-to-clean
+judge
+led
+pickup
+todo.gitignore
+verify-chain
+verify-commission

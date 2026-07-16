@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /home/bork/w/vdc/1/experience/autoharn/orchlog --repo /home/bork/w/vdc/1/experience/autoharn "$@"
