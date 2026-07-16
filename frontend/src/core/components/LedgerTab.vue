@@ -134,6 +134,17 @@ async function loadKindOptions(): Promise<void> {
 }
 
 async function load(): Promise<void> {
+  // limit=0 is rejected by the backend with a 400 (backend/core/ledger_read.py's `if limit < 1:
+  // raise ValueError`, added same-tree as this file's emptyText friendly-message branch below) --
+  // short-circuit before the fetch so the friendly "Limit is set to 0" message renders via the
+  // normal empty-rows path instead of a raw error banner (cross-commit defect, row:587/589/591;
+  // work item cycle3-limit-zero-dead-code).
+  if (limit.value === 0) {
+    rows.value = []
+    error.value = null
+    updatesAvailable.value = false
+    return
+  }
   try {
     const { data, error: err } = await api.GET('/api/rows', {
       params: {
