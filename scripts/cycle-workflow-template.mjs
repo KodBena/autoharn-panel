@@ -27,6 +27,22 @@ export const meta = {
 //   },
 // }
 
+// DURABLE-LANDING-ZONE CONVENTION (ledger row:420, reconciled by row:429): the value
+// this script `return`s at the end of a run -- specifically its `complianceRounds`,
+// `finalReview`, `finalCountersign`, and `converged` fields -- is held ONLY in-memory
+// for the lifetime of this run. This template does NOT persist them anywhere itself,
+// and it never will: per the same constraint noted above (no filesystem/subprocess
+// access inside the sandbox this script body executes in -- only agent()/parallel()/
+// pipeline()/phase()/log() are injected), the script has no means to write a file or a
+// ledger row even if it wanted to. Writing them out is the CALLER's responsibility --
+// the session/agent that invokes this workflow via the `Workflow` tool -- after the
+// run completes: persist the returned object (or the relevant compliance fields from
+// it) to a durable location such as a file under `docs/consults/` or a ledgered row
+// (e.g. `./led --refs row:<work-item> verification "<summary>" `), the same way the
+// caller is already responsible for precomputing `args.schedule` before invoking this
+// script (row:340). The returned object below is the full, sufficient payload for that
+// write; this template's job ends at producing it, not at landing it durably.
+
 const { repoRoot, adrPaths, schedule, specs } = args
 
 if (!schedule || !Array.isArray(schedule.batches) || schedule.batches.length === 0) {
