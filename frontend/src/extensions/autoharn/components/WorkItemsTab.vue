@@ -13,6 +13,19 @@
   ~26 rows today, so all of this is client-side over the already-fetched `rows` (the derived
   `displayRows` below is what actually reaches DataTable) -- no change to DataTable.vue/DataRow.vue
   itself (that pair is in-flight scope for cycle2-ledger-row-truncation, left untouched here).
+
+  Composite-parent/dependency surfacing (work-item-relations-api, consult cycle-4 findings 1+5):
+  `GET /api/work` now also carries `effective_state` (the kernel's composite-discharge
+  derivation -- a fully-closed-via-children parent shows `effective_state=discharged-by-
+  obligations` while its raw `state` stays `open` by kernel design, `Autoharn.idr` s33),
+  `parent_slug` (this item's parent, if any), and `blocked_by` (typed `work_edge_blocks_close`
+  antecedent slugs -- distinct from parent/child). None of these get their own DataTable/DataRow
+  change (still no richText/badge slot added there): `state_label`/`blocked_by_label` below are
+  plain derived strings computed INTO `displayRows`, same technique the existing columns already
+  use, so raw `state` stays available for the filter dropdown/sort untouched. `parent_slug` is
+  shown as a plain mono label, not a link -- work items have no per-slug detail route (only
+  ledger rows do, `/item/<row-id>`), and a graph/tree view is explicitly out of scope for this
+  item.
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
@@ -31,6 +44,32 @@ const searchText = ref('')
 const sortBy = ref<'slug' | 'state' | 'claimant_name'>('slug')
 const sortDir = ref<'asc' | 'desc'>('asc')
 
+// `effective_state` differs from raw `state` today only for a composite parent whose children
+// have all discharged their obligations (kernel value `discharged-by-obligations`) -- the raw
+// `state` column stays `open` forever by kernel design in that case (Autoharn.idr s33), so a
+// reader seeing only `state` cannot tell "done via children" from "genuinely stalled" (consult
+// cycle-4 finding 1). Falls back to a generic `raw -> effective` note for any future
+// effective_state value this deployment doesn't special-case yet, rather than silently hiding it.
+function stateLabel(r: Record<string, unknown>): string {
+  const state = String(r.state ?? '')
+  const effective = r.effective_state
+  if (typeof effective === 'string' && effective && effective !== state) {
+    if (effective === 'discharged-by-obligations') return `${state} — done via children`
+    return `${state} → ${effective}`
+  }
+  return state
+}
+
+// `work_edge_blocks_close` antecedents this item's close is blocked on (consult cycle-4 finding
+// 5) -- a typed dependency edge, distinct from `parent_slug`'s parent/child edge. Only 2 live
+// edges in this deployment today, so a comma-joined plain label is proportionate; a dependency
+// graph view is out of scope for this item.
+function blockedByLabel(r: Record<string, unknown>): string {
+  const v = r.blocked_by
+  if (!Array.isArray(v) || v.length === 0) return ''
+  return v.join(', ')
+}
+
 // Live state vocabulary for the dropdown, derived from the rows in hand (no facet-counts route
 // exists for work items the way `/api/rows/facet-counts` does for the ledger -- ~26 rows makes
 // deriving it client-side from the current page cheap and always in sync with what's shown).
@@ -44,10 +83,12 @@ const stateOptions = computed(() => {
 })
 
 const columns: Column[] = [
-  { key: 'slug', label: 'slug', mono: true, width: '14rem', sortKey: 'slug' },
-  { key: 'state', label: 'state', width: '6rem', sortKey: 'state' },
-  { key: 'claimant_name', label: 'claimant', width: '8rem', sortKey: 'claimant_name' },
-  { key: 'resolution', label: 'resolution', width: '10rem', richText: true },
+  { key: 'slug', label: 'slug', mono: true, width: '12rem', sortKey: 'slug' },
+  { key: 'state_label', label: 'state', width: '11rem', sortKey: 'state' },
+  { key: 'parent_slug', label: 'parent', mono: true, width: '9rem' },
+  { key: 'claimant_name', label: 'claimant', width: '7rem', sortKey: 'claimant_name' },
+  { key: 'blocked_by_label', label: 'blocked by', width: '9rem' },
+  { key: 'resolution', label: 'resolution', width: '9rem', richText: true },
   { key: 'title', label: 'title', width: '3fr', richText: true },
 ]
 
@@ -83,7 +124,13 @@ const displayRows = computed(() => {
     const cmp = av < bv ? -1 : av > bv ? 1 : 0
     return sortDir.value === 'asc' ? cmp : -cmp
   })
-  return out
+  // Derived display-only fields, computed here rather than added to the raw `rows` -- the
+  // filter/sort logic above stays keyed on the real `state` column untouched.
+  return out.map((r) => ({
+    ...r,
+    state_label: stateLabel(r),
+    blocked_by_label: blockedByLabel(r),
+  }))
 })
 
 async function load(): Promise<void> {

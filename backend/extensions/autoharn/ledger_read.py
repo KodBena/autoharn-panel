@@ -82,17 +82,42 @@ def recent_ledger(cfg: PanelConfig, n: int) -> list[dict[str, Any]]:
     return [jsonable(r) for r in rows]
 
 
+def _work_blocked_by(cfg: PanelConfig) -> dict[str, list[str]]:
+    """`dependent_slug -> [antecedent_slug, ...]` from `work_edge_blocks_close` -- a typed,
+    kernel-refused-if-cyclic dependency edge distinct from parent/child (`Autoharn.idr`'s
+    `EdgeType.BlocksClose`; consult cycle-4 finding 5: this edge type existed in the kernel but
+    reached no layer of the app). Read as one small table (2 live edges today), not joined
+    per-row -- cheap enough that `work_items()` below just merges it in Python."""
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT dependent_slug, antecedent_slug FROM work_edge_blocks_close "
+            "ORDER BY dependent_slug, antecedent_slug"
+        )
+        rows = cur.fetchall()
+    out: dict[str, list[str]] = {}
+    for r in rows:
+        out.setdefault(r["dependent_slug"], []).append(r["antecedent_slug"])
+    return out
+
+
 def work_items(cfg: PanelConfig) -> list[dict[str, Any]]:
     with connect(cfg) as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT w.slug, w.title, w.state, w.resolution, w.witness, p.name AS claimant_name
+            SELECT w.slug, w.title, w.state, w.effective_state, w.resolution, w.witness,
+                   w.parent_slug, p.name AS claimant_name
             FROM work_item_current w LEFT JOIN principal p ON p.id = w.claimant
             ORDER BY w.slug
             """
         )
         rows = cur.fetchall()
-    return [jsonable(r) for r in rows]
+    blocked_by = _work_blocked_by(cfg)
+    out = []
+    for r in rows:
+        item = jsonable(r)
+        item["blocked_by"] = blocked_by.get(item["slug"], [])
+        out.append(item)
+    return out
 
 
 def review_gap(cfg: PanelConfig) -> list[dict[str, Any]]:
@@ -127,7 +152,8 @@ def work_item(cfg: PanelConfig, slug: str) -> dict[str, Any] | None:
     with connect(cfg) as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT w.slug, w.title, w.state, w.resolution, w.witness, p.name AS claimant_name
+            SELECT w.slug, w.title, w.state, w.effective_state, w.resolution, w.witness,
+                   w.parent_slug, p.name AS claimant_name
             FROM work_item_current w LEFT JOIN principal p ON p.id = w.claimant
             WHERE w.slug = %s
             """,
