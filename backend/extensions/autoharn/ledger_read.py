@@ -62,6 +62,13 @@ def autoharn_health(cfg: PanelConfig) -> dict[str, Any]:
 
 
 def recent_ledger(cfg: PanelConfig, n: int) -> list[dict[str, Any]]:
+    # `n` feeds straight into a LIMIT clause below -- same vulnerability class as `/api/rows`'
+    # `limit` (Postgres raises an unhandled 500 on a negative LIMIT; cycle-3 consult finding 2,
+    # fixed for `rows()` in commit 0d9aa7e). Not currently called by the frontend, but validated
+    # the same way (raise ValueError) so a future caller -- HTTP route or otherwise -- gets a
+    # clean 400 rather than a raw DB error, matching `rows()`'s convention.
+    if n < 1:
+        raise ValueError(f"n must be >= 1, got {n}")
     with connect(cfg) as conn, conn.cursor() as cur:
         cur.execute(
             """

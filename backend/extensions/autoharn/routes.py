@@ -72,7 +72,10 @@ def api_commission(request: Request, commission_row: int) -> dict[str, Any]:
 @router.get("/api/ledger/recent")
 def api_ledger_recent(request: Request, n: int = 50) -> list[dict[str, Any]]:
     cfg = request.app.state.panel.cfg
-    return ledger_read.recent_ledger(cfg, n)
+    try:
+        return ledger_read.recent_ledger(cfg, n)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/api/work")
