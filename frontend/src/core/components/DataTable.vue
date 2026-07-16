@@ -96,10 +96,24 @@ const virtualizer = useVirtualizer(
   computed(() => ({
     count: props.rows.length,
     getScrollElement: () => scrollParent.value,
+    // rowHeightPx is only an ESTIMATE for the initial layout pass -- real ledger statements
+    // vary wildly in length and wrap to multiple lines, so a fixed height here was the root
+    // cause of the >200-row overlap (cycle3-ledger-virtualization-overflow): every row was
+    // absolutely positioned via `translateY` at a multiple of this constant regardless of how
+    // tall its wrapped text actually rendered, so long-statement rows spilled into the next
+    // row's slot. `measureElement` (wired via the `data-index`+ref callback below) has the
+    // virtualizer re-measure each row's real DOM height after mount/update and re-derive every
+    // subsequent row's offset from actual sizes, same pattern as tanstack/virtual's own
+    // dynamic-size-list example.
     estimateSize: () => props.rowHeightPx,
     overscan: 12,
   })),
 )
+
+function measureRow(el: Element | { $el: Element } | null): void {
+  if (!el) return
+  virtualizer.value.measureElement(el as Element)
+}
 
 // A single stable handler reference passed to every DataRow instance -- never recreated per
 // item, so DataRow's own prop identity stays stable across re-renders (omega Don't-do #2).
@@ -162,8 +176,10 @@ function isSuperseded(row: Record<string, unknown>): boolean {
         <div
           v-for="vrow in virtualizer.getVirtualItems()"
           :key="vrow.index"
+          :ref="measureRow"
+          :data-index="vrow.index"
           class="virtual-row"
-          :style="{ transform: `translateY(${vrow.start}px)`, height: vrow.size + 'px' }"
+          :style="{ transform: `translateY(${vrow.start}px)` }"
         >
           <DataRow
             :row="rows[vrow.index]"
