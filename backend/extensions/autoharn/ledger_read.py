@@ -218,6 +218,28 @@ def cosign_fact(cfg: PanelConfig, target_row_id: int) -> dict[str, Any]:
     return {"cosigned": False, "by": None, "review_id": None, "verdict": None}
 
 
+def reviews_for_row(cfg: PanelConfig, row_id: int) -> list[dict[str, Any]]:
+    """The item view's "review/co-sign history with actor + independence badges"
+    (SPEC.md sec 2.2): every live `review` row whose `regards` points at `row_id`, joined to its
+    typed `review_detail` payload -- NOT narrowed to maintainer/attest the way `maintainer_cosigned`
+    is, since the item view renders the full history, not just the discharge-relevant fact."""
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT r.id AS review_id, r.ts, p.name AS actor_name,
+                   d.verdict, d.independence, d.basis
+            FROM ledger_current r
+            JOIN review_detail d ON d.ledger_id = r.id
+            LEFT JOIN principal p ON p.id = r.actor
+            WHERE r.kind = 'review' AND r.regards = %s
+            ORDER BY r.id
+            """,
+            (row_id,),
+        )
+        rows = cur.fetchall()
+    return [jsonable(r) for r in rows]
+
+
 @dataclass(frozen=True)
 class ResolvedWitness:
     ref_kind: str
@@ -252,6 +274,41 @@ def resolve_item_witnesses(cfg: PanelConfig, witness_refs: tuple[tuple[str, str]
 _PANEL_ITEM_TOKEN_RE = re.compile(r"^panel-item:(?P<cid>\d+):(?P<iid>[A-Za-z0-9_-]+)$")
 _ROW_TOKEN_RE = re.compile(r"^row:(?P<id>\d+)$")
 _WORK_TOKEN_RE = re.compile(r"^work:(?P<slug>[A-Za-z0-9_.-]+)$")
+
+
+def row_refs_text(cfg: PanelConfig, row_id: int) -> str | None:
+    """The raw `refs` text of ONE ledger row -- `ledger_row`/`work_item` above deliberately don't
+    select it (they answer narrower questions), so the item view's generic witness-ref reader
+    gets its own minimal query rather than widening either of those."""
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute("SELECT refs FROM ledger_current WHERE id = %s", (row_id,))
+        row = cur.fetchone()
+    return row["refs"] if row else None
+
+
+def parse_witness_refs(refs_text: str | None) -> list[tuple[str, str]]:
+    """Generic `row:<id>` / `work:<slug>` witness-token extraction from ANY row's `refs` text --
+    unlike `parse_item_refs`, this does NOT require a wrapping `panel-item:<commission>:...`
+    token. Used by the item view (SPEC.md sec 2.2's "disposition/witness edges") to show
+    witness/co-sign edges for an arbitrary ledger row, not just a decomposition item row."""
+    out: list[tuple[str, str]] = []
+    for tok in (refs_text or "").split():
+        m = _ROW_TOKEN_RE.match(tok)
+        if m:
+            out.append(("row", m.group("id")))
+            continue
+        m = _WORK_TOKEN_RE.match(tok)
+        if m:
+            out.append(("work", m.group("slug")))
+    return out
+
+
+def item_witnesses(cfg: PanelConfig, row_id: int) -> list[ResolvedWitness]:
+    """`row_id`'s own `refs` text, read generically (`parse_witness_refs`) and resolved the same
+    way a decomposition item's witnesses are (`resolve_item_witnesses`) -- the item view's witness
+    panel for an arbitrary row, e.g. a `work_closed` row's `--witness row:<n>` token."""
+    witness_refs = tuple(parse_witness_refs(row_refs_text(cfg, row_id)))
+    return resolve_item_witnesses(cfg, witness_refs)
 
 
 def parse_item_refs(refs_text: str | None, commission_row: int) -> tuple[str | None, list[tuple[str, str]]]:

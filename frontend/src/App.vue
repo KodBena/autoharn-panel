@@ -7,6 +7,7 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { healthState, loadHealth } from './core/state/health'
 import { useLiveUpdates } from './core/composables/useLiveUpdates'
 import LedgerTab from './core/components/LedgerTab.vue'
@@ -17,6 +18,13 @@ import QuestionsTab from './extensions/autoharn/components/QuestionsTab.vue'
 import CommissionTab from './extensions/autoharn/components/CommissionTab.vue'
 
 const { status } = useLiveUpdates()
+
+// App.vue is the ONE always-mounted root component (main.ts's `createApp(App)`); rather than a
+// separate root wrapper, this reads its own route (router.ts) to decide tab-UI vs the deep-
+// linkable item view (SPEC.md sec 2.2) -- the six tabs below are otherwise byte-for-byte what
+// they were before routing existed, gated by `isItemRoute` rather than replaced.
+const route = useRoute()
+const isItemRoute = computed(() => route.path.startsWith('/item/'))
 
 type TabId = 'ledger' | 'profiles' | 'work' | 'review-gap' | 'questions' | 'commission'
 const activeTab = ref<TabId>('ledger')
@@ -67,26 +75,29 @@ onMounted(loadHealth)
     </div>
   </header>
 
-  <nav class="tabs">
-    <button
-      v-for="t in visibleTabs"
-      :key="t.id"
-      class="tab-btn"
-      :class="{ active: activeTab === t.id }"
-      @click="activeTab = t.id"
-    >
-      {{ t.label }}
-    </button>
-  </nav>
+  <template v-if="!isItemRoute">
+    <nav class="tabs">
+      <button
+        v-for="t in visibleTabs"
+        :key="t.id"
+        class="tab-btn"
+        :class="{ active: activeTab === t.id }"
+        @click="activeTab = t.id"
+      >
+        {{ t.label }}
+      </button>
+    </nav>
 
-  <LedgerTab v-if="activeTab === 'ledger'" />
-  <ProfilesPanel v-if="activeTab === 'profiles'" />
-  <template v-if="autoharnEnabled">
-    <CommissionTab v-if="activeTab === 'commission'" />
-    <WorkItemsTab v-if="activeTab === 'work'" />
-    <ReviewGapTab v-if="activeTab === 'review-gap'" />
-    <QuestionsTab v-if="activeTab === 'questions'" />
+    <LedgerTab v-if="activeTab === 'ledger'" />
+    <ProfilesPanel v-if="activeTab === 'profiles'" />
+    <template v-if="autoharnEnabled">
+      <CommissionTab v-if="activeTab === 'commission'" />
+      <WorkItemsTab v-if="activeTab === 'work'" />
+      <ReviewGapTab v-if="activeTab === 'review-gap'" />
+      <QuestionsTab v-if="activeTab === 'questions'" />
+    </template>
   </template>
+  <RouterView v-else />
 
   <footer class="foot">
     Ledger panel — Vue 3 port. Extension boundary: core (rows/kinds/refs/supersession) vs

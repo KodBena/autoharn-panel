@@ -95,3 +95,24 @@ export interface CosignResponse {
   stderr: string
   review_id: number | null
 }
+
+// GET /api/item/{row_id}/obligations (backend/extensions/autoharn/routes.py's
+// api_item_obligations) -- the item view's (SPEC.md sec 2.2) autoharn-semantic enrichment of a
+// core ledger row: review/co-sign history, whether the row itself is maintainer-cosigned, and
+// its own `refs` resolved generically as witness tokens (same `Witness` shape the commission
+// decomposition view already uses).
+export interface ReviewRecord {
+  review_id: number
+  ts: string | null
+  actor_name: string | null
+  verdict: string
+  independence: string
+  basis: string
+}
+
+export interface ItemObligations {
+  row_id: number
+  cosign: CosignInfo
+  reviews: ReviewRecord[]
+  witnesses: Witness[]
+}
