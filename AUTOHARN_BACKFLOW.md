@@ -243,6 +243,67 @@ protect gets a little weaker each time).
 
 ---
 
+## Suggestion (open, not a settled design) — an agent-start briefing for the ledger's reactive-discovery rules
+
+**What prompted this.** Watching a dispatched subagent's own transcript this session, mid-task,
+produce exactly this and then have to recover from it:
+
+```
+Error: Ledger policy: a change to a source file must be preceded by a ledger entry naming
+the file it changes. Insert the entry (one INSERT, as usual), then RE-ISSUE THE SAME EDIT —
+the gate re-checks on every attempt, so retrying after the insert is the whole fix.
+Run:  ./led -f <basename-of-the-file-you-are-editing> decision "<why this change>"   then
+re-issue the SAME edit -- the gate re-checks on every attempt, so retrying is the whole fix.
+```
+
+That is `hooks/pretooluse_change_gate.py` (the e13/s13 "act-gate", 1093 lines) doing exactly
+what it is designed to do — refuse an unledgered write with a clear, actionable teach-text,
+never silently. The mechanism is not the problem. The *timing* is: the agent learns this rule
+exists only by tripping it, on a live tool call, mid-task, every single time a fresh session
+or a fresh subagent's first file edit happens to be the one that discovers the gate.
+
+**This is not an isolated instance — it is a recurring shape, witnessed at least three times
+this session alone**, each a different rule, each learned the same reactive way:
+
+1. The change-gate itself (above) — a fresh subagent's first source edit refused, mid-task,
+   until it ledgers a `decision -f <file>` first.
+2. Flag ordering — `led`'s generic top-level parser wants flags *before* the kind word
+   (`./led --refs row:N decision "..."`), while `led work open`/`led work close` want them
+   *after* the slug/title/verdict. Both this orchestrating session and at least one dispatched
+   subagent hit this exact refusal independently and had to reissue the command after reading
+   the error text.
+3. Same-session countersign refusal — `led review <id> attest technical "..."` is refused when
+   the countersigning actor is the same session/agent that wrote the row under review
+   (`validate_independence()`), discovered only at the moment of attempting it, with the
+   `self-review`/`register-principal` fallback learned from the refusal's own text, not in
+   advance.
+
+In every case the refusal's own teach-text is good — clear, actionable, no ambiguity about the
+fix — so this is not a request to change what the gate does. It is that **each occurrence costs
+one full tool-call round-trip (and, for a subagent, a chunk of its own token budget) that a
+five-second upfront briefing would have avoided entirely**, and the cost repeats identically
+for every fresh session and every fresh subagent dispatch, forever, since nothing carries the
+lesson forward between invocations the way a human operator's own accumulated experience would.
+
+**The suggestion, offered as a direction rather than a specification.** Some mechanism, running
+at the start of an agent's/session's work in a ledgered world, that surfaces the handful of
+rules an agent is otherwise guaranteed to discover only by tripping them — at minimum: the
+change-gate's existence and its `-f <file>` requirement, the flag-order asymmetry between
+generic-kind and `work` subcommands, and the same-session countersign restriction. The
+maintainer has more than one candidate shape in mind for what this should actually look like
+and has deliberately not settled on one yet — this entry exists to put the *problem* on record
+now, not to pre-empt that design choice. Candidate directions worth having on the table when
+that design happens (illustrative, not exhaustive, and not a recommendation for any one of
+them over the others): a `SessionStart`-style hook that injects a short rules-briefing into a
+fresh agent's context the same way `sessionstart_durable_decisions.py` already injects standing
+decisions; a static "ledger quickstart" doc that `CLAUDE.md` points a fresh session/subagent at
+before its first write; or a dry-run/explain mode on `led` itself that a cautious agent could
+consult before attempting an edit. Whatever shape is chosen, the discriminator for whether it
+worked is simple and testable: does a fresh subagent's *first* encounter with each of these
+three rules trip the refusal, or does it already know?
+
+---
+
 ## Verification note
 
 Every file path and line reference above was checked against the actual
