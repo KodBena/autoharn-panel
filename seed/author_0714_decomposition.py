@@ -15,10 +15,15 @@ deployment's row 680), kept here as the worked example and re-runnable idempoten
 whichever deployment adopts this repo's `autoharn` extension against that same ledger.
 
 This script deliberately does NOT re-derive the `panel-item:` refs grammar. It imports
-`extensions.autoharn.ledger_read.parse_item_refs` (the ONE anchored, fail-closed parser of that
-grammar in this tree) and `resolve_witness` (the ONE witness resolver), so this write path and
-the panel's read path can never diverge on what counts as "item `<iid>` already exists" or
-"witness `<ref_kind>:<ref>` resolves".
+`extensions.autoharn.parsers.parse_item_refs` (the ONE anchored, fail-closed parser of that
+grammar in this tree -- `extensions/autoharn/ledger_read.py`, this function's original home, was
+deleted by the `autoharn-adapter-acl-wrap`/`autoharn-god-module-split` remediation; `parsers.py`
+is its real, current home, not the `ledger_adapter.py` re-export kept there only for older
+importers' back-compat) and calls `resolve_witness` (the ONE witness resolver) as a method on a
+`PostgresAutoharnLedgerReader` instance (`extensions.autoharn.ledger_adapter`) -- `resolve_witness`
+and `fetch_parsed_item_rows` are DB-touching `AutoharnLedgerPort` Protocol methods now, not bare
+module functions -- so this write path and the panel's read path can never diverge on what
+counts as "item `<iid>` already exists" or "witness `<ref_kind>:<ref>` resolves".
 
 Connection facts are resolved via `backend.config.load_config` (this repo's own config module,
 SPEC.md sec 1) -- no hardcoded host, a loud SystemExit refusal if nothing resolves.
@@ -62,13 +67,16 @@ _REPO_ROOT = _HERE.parent
 sys.path.insert(0, str(_REPO_ROOT / "backend"))  # config.py, extensions/, core/ live here
 
 import config as panel_config  # noqa: E402
-from extensions.autoharn.ledger_read import (  # noqa: E402
-    fetch_parsed_item_rows,
-    parse_item_refs,
-    resolve_witness,
-)
+from extensions.autoharn.ledger_adapter import PostgresAutoharnLedgerReader  # noqa: E402
+from extensions.autoharn.parsers import parse_item_refs  # noqa: E402
 
 COMMISSION_ROW = 680
+
+# `fetch_parsed_item_rows`/`resolve_witness` are DB-touching `AutoharnLedgerPort` Protocol
+# methods (ports.py), not bare module functions -- constructed once, module-level, exactly as
+# tests/test_commission_trust.py and tests/test_cosign_live.py already do (`_READER = ...` at
+# import time, stateless, `cfg` passed per call).
+_READER = PostgresAutoharnLedgerReader()
 
 
 @dataclass(frozen=True)
@@ -400,7 +408,7 @@ def _existing_matches(cfg: panel_config.PanelConfig, item_id: str) -> list[int]:
     -- never a substring/LIKE test scoped to the item id itself (that is the exact unanchored-
     substring bug this revision fixes: it would treat 'A10' as a match for a query for 'A1').
     Returns the list of matching row ids, in ascending order (empty if none)."""
-    return sorted(r.row_id for r in fetch_parsed_item_rows(cfg, COMMISSION_ROW) if r.item_id == item_id)
+    return sorted(r.row_id for r in _READER.fetch_parsed_item_rows(cfg, COMMISSION_ROW) if r.item_id == item_id)
 
 
 def _resolve_candidate_witnesses(
@@ -413,7 +421,7 @@ def _resolve_candidate_witnesses(
     kept: list[str] = []
     dropped: list[tuple[str, str]] = []
     for ref_kind, ref in candidates:
-        facts, _resolved = resolve_witness(cfg, ref_kind, ref)
+        facts, _resolved = _READER.resolve_witness(cfg, ref_kind, ref)
         if facts.exists:
             kept.append(f"{ref_kind}:{ref}")
         else:
