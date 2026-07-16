@@ -127,6 +127,30 @@ def review_gap(cfg: PanelConfig) -> list[dict[str, Any]]:
     return [jsonable(r) for r in rows]
 
 
+def work_violations(cfg: PanelConfig) -> list[dict[str, Any]]:
+    """`work_item_violations` -- the kernel's own live "what's currently wrong right now" signal
+    (cycle-4 audit finding 10, SERIOUS): every currently-unresolved decomposition-tree violation
+    (duplicate opens, dangling dependency/parent refs, dependency/parent/blocks-close cycles, a
+    shipped close with no witness, an opening act orphaned by a later retraction, or a composite
+    closed while its own child tree still blocks it) that has NOT already been disposed of via a
+    `work_violation_disposition` row -- the view's own definition filters those out via a
+    `disposition_basis_holds` join, so every row this returns is a live, undisposed violation, not
+    a historical one. Empty in this deployment today, same honest-narrow-columns shape as
+    `review_gap`/`question_status` above: the view carries only `violation, slug, detail,
+    target_id`, no id/ts/actor of its own. `target_id` is always populated (the view's own final
+    SELECT inner-joins it against `ledger_current`) and doubles as this tab's row-click target
+    (mirroring `review_gap`'s `id` column serving the same role in ReviewGapTab.vue) -- ordered by
+    it so the same violation instance holds a stable position across polls, there being no id
+    column of the view's own to order by."""
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT violation, slug, detail, target_id FROM work_item_violations "
+            "ORDER BY target_id, violation, slug"
+        )
+        rows = cur.fetchall()
+    return [jsonable(r) for r in rows]
+
+
 def question_status(cfg: PanelConfig) -> list[dict[str, Any]]:
     """`question_status` (the kernel view) plus each question row's own `statement` text, joined
     in here from `ledger_current` rather than widening the kernel view itself -- that view ships

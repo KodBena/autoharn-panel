@@ -13,6 +13,14 @@
   numbers, ...) in a native-`title` hover span -- this is the SAME one scan over each statement
   the citation split already does, just a second pass restricted to the leftover plain segments,
   not a parallel independent scan over the raw statement string.
+
+  Also recognizes a bare `target <id>` phrase as a citation (violation-dispositions-queue,
+  cycle-4 finding 10): `work_violation_disposition` ledger rows (e.g. "orphaned_by_retraction
+  target 602 (retired)", composed by the `led` CLI, not this app) name their target purely as
+  english prose, never a `row:<id>` token -- confirmed against this deployment's own live rows
+  (498-502, 608) that `target_id` there always resolves against `ledger_current`. Rendered with
+  its own original wording preserved as the link text (CitationLink's `label` prop) rather than
+  rewritten to `row:<id>`, so a reader sees the same words the ledger actually recorded.
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
@@ -21,7 +29,7 @@ import { findGlossaryMatches } from '../glossary'
 
 const props = defineProps<{ text: string | null | undefined }>()
 
-const ROW_REF_RE = /row:(\d+)/g
+const ROW_REF_RE = /row:(\d+)|\btarget (\d+)\b/g
 
 interface Segment {
   key: number
@@ -56,7 +64,7 @@ const segments = computed<Segment[]>(() => {
   for (const m of s.matchAll(ROW_REF_RE)) {
     const idx = m.index ?? 0
     if (idx > last) out.push(...splitGlossary(s.slice(last, idx)))
-    out.push({ key: keyCounter++, kind: 'citation', value: m[0], rowId: Number(m[1]) })
+    out.push({ key: keyCounter++, kind: 'citation', value: m[0], rowId: Number(m[1] ?? m[2]) })
     last = idx + m[0].length
   }
   if (last < s.length) out.push(...splitGlossary(s.slice(last)))
@@ -68,7 +76,7 @@ const segments = computed<Segment[]>(() => {
 <template>
   <span class="citation-text">
     <template v-for="seg in segments" :key="seg.key">
-      <CitationLink v-if="seg.kind === 'citation'" :row-id="seg.rowId!" />
+      <CitationLink v-if="seg.kind === 'citation'" :row-id="seg.rowId!" :label="seg.value" />
       <span v-else-if="seg.kind === 'glossary'" class="glossary-term" :title="seg.gloss">{{ seg.value }}</span>
       <span v-else>{{ seg.value }}</span>
     </template>

@@ -27,7 +27,14 @@ import { computed, ref, nextTick } from 'vue'
 import { useRowSynopsis } from '../composables/useRowSynopsis'
 import { truncate } from '../../utils/format'
 
-const props = defineProps<{ rowId: number }>()
+const props = defineProps<{
+  rowId: number
+  /** Display text for the link -- defaults to `row:<id>`. Set by CitationText.vue's `target
+   * <id>` recognition (violation-dispositions-queue, cycle-4 finding 10) so a statement like
+   * "orphaned_by_retraction target 602 (retired)" keeps rendering its own original wording
+   * ("target 602") as the clickable text instead of being rewritten to "row:602". */
+  label?: string
+}>()
 
 const { ensureLoaded, get } = useRowSynopsis()
 const hovering = ref(false)
@@ -81,7 +88,7 @@ function ageOf(ts: string | null | undefined): string {
 
 <template>
   <span ref="wrapEl" class="citation-wrap" @mouseenter="onHover" @mouseleave="onLeave">
-    <router-link :to="`/item/${rowId}`" class="citation-link" @click.stop>row:{{ rowId }}</router-link>
+    <router-link :to="`/item/${rowId}`" class="citation-link" @click.stop>{{ label ?? `row:${rowId}` }}</router-link>
     <Teleport to="body">
       <div
         v-if="hovering"

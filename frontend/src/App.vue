@@ -16,6 +16,7 @@ import ProfilesPanel from './core/components/ProfilesPanel.vue'
 import WorkItemsTab from './extensions/autoharn/components/WorkItemsTab.vue'
 import ReviewGapTab from './extensions/autoharn/components/ReviewGapTab.vue'
 import QuestionsTab from './extensions/autoharn/components/QuestionsTab.vue'
+import WorkViolationsTab from './extensions/autoharn/components/WorkViolationsTab.vue'
 import CommissionTab from './extensions/autoharn/components/CommissionTab.vue'
 import { TAB_PATHS } from './router'
 
@@ -35,7 +36,7 @@ const router = useRouter()
 // RouterView, which resolves each to its own distinct view.
 const isTabRoute = computed(() => (Object.values(TAB_PATHS) as string[]).includes(route.path))
 
-type TabId = 'ledger' | 'profiles' | 'work' | 'review-gap' | 'questions' | 'commission'
+type TabId = 'ledger' | 'profiles' | 'work' | 'review-gap' | 'questions' | 'work-violations' | 'commission'
 
 // row:557/cycle3-tab-url-routing: activeTab is now DERIVED from the URL (not its own ref) so
 // that switching tabs, reloading, bookmarking, or navigating directly to a tab's URL all agree
@@ -65,6 +66,7 @@ const autoharnTabs: { id: TabId; label: string }[] = [
   { id: 'work', label: 'Work items' },
   { id: 'review-gap', label: 'Review gap' },
   { id: 'questions', label: 'Questions' },
+  { id: 'work-violations', label: 'Violations' },
 ]
 
 const visibleTabs = computed(() =>
@@ -129,6 +131,7 @@ onMounted(loadHealth)
       <WorkItemsTab v-if="activeTab === 'work'" />
       <ReviewGapTab v-if="activeTab === 'review-gap'" />
       <QuestionsTab v-if="activeTab === 'questions'" />
+      <WorkViolationsTab v-if="activeTab === 'work-violations'" />
     </template>
   </template>
   <RouterView v-else />

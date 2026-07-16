@@ -88,6 +88,19 @@ export interface QuestionRow {
   statement: string
 }
 
+// work_item_violations: the kernel's own live "what's currently wrong right now" signal (cycle-4
+// audit finding 10, SERIOUS) -- every currently-unresolved decomposition-tree violation not yet
+// disposed of via a work_violation_disposition row. Same honest-narrow-columns note as
+// ReviewGapRow/QuestionRow above: no id/ts/actor of its own. `target_id` is always populated (the
+// view's own final SELECT inner-joins it against ledger_current) and doubles as the row-click
+// target this tab expands, mirroring review_gap's own `id` column.
+export interface WorkViolationRow {
+  violation: string
+  slug: string
+  detail: string | null
+  target_id: number
+}
+
 export interface CosignRequest {
   row_id: number
   verdict: string
