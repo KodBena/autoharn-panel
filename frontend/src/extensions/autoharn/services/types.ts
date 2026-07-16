@@ -161,6 +161,16 @@ export interface CosignResponse {
   review_id: number | null
 }
 
+// review_detail.discharge_grade's closed vocabulary (backend extensions.autoharn.ledger_read.
+// DISCHARGE_GRADES) -- a kernel-TRIGGER-COMPUTED fact (validate_independence(), s29/s34) never
+// supplied or overridable by whoever wrote the review, unlike the writer-asserted `independence`
+// field it rides alongside on ReviewRecord below. Cycle-5 audit finding 2 (CRITICAL): this is the
+// one signal that can't be self-asserted, and until now the app exposed it nowhere -- `null` is
+// kept in the type only defensively (every review in this deployment carries a non-null grade;
+// the DB column itself allows NULL for any pre-s29-vintage historical row this deployment never
+// actually has).
+export type DischargeGrade = 'same-principal' | 'same-session' | 'distinct-session' | 'distinct-deployment'
+
 // GET /api/item/{row_id}/obligations (backend/extensions/autoharn/routes.py's
 // api_item_obligations) -- the item view's (SPEC.md sec 2.2) autoharn-semantic enrichment of a
 // core ledger row: review/co-sign history, whether the row itself is maintainer-cosigned, and
@@ -172,6 +182,7 @@ export interface ReviewRecord {
   actor_name: string | null
   verdict: string
   independence: string
+  discharge_grade: DischargeGrade | null
   basis: string
 }
 

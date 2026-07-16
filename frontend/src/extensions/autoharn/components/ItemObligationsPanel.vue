@@ -15,10 +15,47 @@ import { onMounted, ref, watch } from 'vue'
 import CosignPanel from './CosignPanel.vue'
 import ResourceFieldsCard from './ResourceFieldsCard.vue'
 import { fetchItemObligations } from '../services/item'
-import type { ItemObligations } from '../services/types'
+import type { DischargeGrade, ItemObligations } from '../services/types'
 import { fmtTs } from '../../../utils/format'
 
 const props = defineProps<{ rowId: number }>()
+
+// Cycle-5 audit finding 2 (CRITICAL): `independence` (verdict + label above) is whatever the
+// reviewing writer typed -- self-asserted, unverified. `discharge_grade` is the kernel's own
+// trigger-computed read of the SAME review's stamp facts (never writer-supplied, never
+// overridable -- backend extensions.autoharn.ledger_read.reviews_for_row's docstring). Label/
+// tooltip/badge-class ladder mirrors CommissionTab.vue's commission-trust-badge convention
+// (same shape of problem: a closed, weak-to-strong vocabulary that needs an at-a-glance visual
+// distinction, not just more unstyled text) -- kept local to this component rather than shared,
+// same precedent that file already set for its own trust ladder.
+const GRADE_LABELS: Record<DischargeGrade, string> = {
+  'same-principal': 'SAME PRINCIPAL',
+  'same-session': 'SAME SESSION',
+  'distinct-session': 'DISTINCT SESSION',
+  'distinct-deployment': 'DISTINCT DEPLOYMENT',
+}
+const GRADE_TOOLTIPS: Record<DischargeGrade, string> = {
+  'same-principal':
+    'SAME PRINCIPAL -- the kernel found this review and the row it regards share the same (session, agent) pair, or one side has no stamp at all. The weakest grade: this is a self-attestation, whatever independence value it claims.',
+  'same-session':
+    'SAME SESSION -- a different agent wrote this review than wrote the row it regards, but within the SAME session. Second-weakest grade: not the identical actor, but not an arms-length review either.',
+  'distinct-session':
+    'DISTINCT SESSION -- a genuinely different session wrote this review than wrote the row it regards. A real independence signal.',
+  'distinct-deployment':
+    'DISTINCT DEPLOYMENT -- reviewed from an entirely separate deployment. The strongest grade the kernel can compute.',
+}
+
+function gradeLabel(grade: DischargeGrade | null): string {
+  if (grade === null) return 'UNKNOWN'
+  return GRADE_LABELS[grade] ?? grade.toUpperCase()
+}
+function gradeTooltip(grade: DischargeGrade | null): string {
+  if (grade === null) return 'UNKNOWN -- this review row carries no kernel-computed discharge grade (a pre-s29-vintage row, never seen live in this deployment).'
+  return GRADE_TOOLTIPS[grade] ?? grade
+}
+function gradeBadgeClass(grade: DischargeGrade | null): string {
+  return `badge-discharge-${grade ?? 'unknown'}`
+}
 
 const data = ref<ItemObligations | null>(null)
 const error = ref<string | null>(null)
@@ -62,7 +99,8 @@ defineExpose({ reload: load })
             <th>review id</th>
             <th>actor</th>
             <th>verdict</th>
-            <th>independence</th>
+            <th>independence (self-declared)</th>
+            <th>discharge grade (kernel-computed)</th>
             <th>ts</th>
             <th>basis</th>
           </tr>
@@ -73,6 +111,13 @@ defineExpose({ reload: load })
             <td>{{ r.actor_name ?? '(none)' }}</td>
             <td><span class="badge" :class="r.verdict === 'attest' ? 'badge-COSIGNED' : 'badge-WITNESSED'">{{ r.verdict }}</span></td>
             <td>{{ r.independence }}</td>
+            <td>
+              <span
+                class="badge"
+                :class="gradeBadgeClass(r.discharge_grade)"
+                :title="gradeTooltip(r.discharge_grade)"
+              >{{ gradeLabel(r.discharge_grade) }}</span>
+            </td>
             <td class="mono">{{ fmtTs(r.ts) }}</td>
             <td class="statement-text">{{ r.basis }}</td>
           </tr>

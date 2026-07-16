@@ -48,6 +48,19 @@ COMMISSION_TRUST_LEVELS: tuple[str, ...] = ("lazy", "full", "signed", "forged", 
 VERDICTS: tuple[str, ...] = ("attest", "attest_with_reservations", "refuse")
 INDEPENDENCE_VALUES: tuple[str, ...] = ("self-review", "technical", "managerial", "financial")
 
+# review_detail.discharge_grade's own closed vocabulary (kernel/lineage's s29 obligation-item-key
+# delta, re-guarded by s34 -- `validate_independence()`'s trigger body). UNLIKE VERDICTS/
+# INDEPENDENCE_VALUES above, this is never writer-supplied and never validated on the way IN (the
+# trigger itself refuses a caller-supplied value outright, s34's whole point) -- named here purely
+# so callers/readers of this module have the closed target vocabulary written down once, the same
+# reason DISCHARGE_STATES above exists for the unrelated obligation-tree coloring vocabulary.
+# Discharge-grade audit (cycle-5 finding 2, CRITICAL): a trigger-computed, non-forgeable fact
+# strictly stronger evidence than the writer-supplied `independence` value alongside it -- exposed
+# by `reviews_for_row` below so the frontend can render it, never asserted by this backend.
+DISCHARGE_GRADES: tuple[str, ...] = (
+    "same-principal", "same-session", "distinct-session", "distinct-deployment",
+)
+
 # Status vocabulary a decomposition item's live disposition renders as.
 STATUS_VALUES: tuple[str, ...] = ("OPEN", "WITNESSED", "PARTIAL", "COSIGNED", "AMBIGUOUS")
 
@@ -553,12 +566,23 @@ def reviews_for_row(cfg: PanelConfig, row_id: int) -> list[dict[str, Any]]:
     """The item view's "review/co-sign history with actor + independence badges"
     (SPEC.md sec 2.2): every live `review` row whose `regards` points at `row_id`, joined to its
     typed `review_detail` payload -- NOT narrowed to maintainer/attest the way `maintainer_cosigned`
-    is, since the item view renders the full history, not just the discharge-relevant fact."""
+    is, since the item view renders the full history, not just the discharge-relevant fact.
+
+    `discharge_grade` (cycle-5 audit finding 2, CRITICAL) rides alongside the writer-supplied
+    `independence` value here: unlike `independence` (asserted by whoever wrote the review --
+    `technical`/`managerial`/`financial`/`self-review`, any of which a reviewer can simply type),
+    `discharge_grade` is computed by `validate_independence()`'s trigger from the review's own
+    stamp facts compared against the target row's, and a writer literally cannot supply or
+    override it (s34's refusal). Confirmed live in this deployment: every review to date grades
+    `same-principal` or `same-session` -- the two weakest rungs of `DISCHARGE_GRADES` -- while
+    many of those same rows self-declare `independence: technical`. Exposing both side-by-side
+    lets a reader see when a review's self-declared independence outruns what the kernel can
+    actually verify, rather than trusting the self-declaration alone."""
     return _fetch_jsonable_rows(
         cfg,
         """
         SELECT r.id AS review_id, r.ts, p.name AS actor_name,
-               d.verdict, d.independence, d.basis
+               d.verdict, d.independence, d.discharge_grade, d.basis
         FROM ledger_current r
         JOIN review_detail d ON d.ledger_id = r.id
         LEFT JOIN principal p ON p.id = r.actor

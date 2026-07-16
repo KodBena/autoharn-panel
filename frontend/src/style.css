@@ -233,6 +233,24 @@ button.primary:hover { filter: brightness(1.08); }
 .badge-trust-forged { background: var(--danger); color: #fff; }
 .badge-trust-unverifiable { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-text); }
 
+/* Review discharge-grade badges (cycle-5 audit finding 2, CRITICAL): review_detail.discharge_grade
+   is a kernel-trigger-computed, non-forgeable fact (never writer-supplied, unlike the `independence`
+   value it sits beside) -- a closed weak-to-strong ladder, same shape of problem as the commission
+   trust ladder above, so it reuses that ladder's own token vocabulary rather than inventing a new
+   one. `same-principal` (the literal same actor reviewing its own row) is the weakest possible
+   grade -- as alarming as a self-declared `independence: technical` claim actually deserves, so it
+   gets the same danger tokens as badge-trust-forged/badge-AMBIGUOUS, not a softer one. `same-session`
+   is one rung up (a different agent, same session) -- cautionary, same warn tokens as
+   badge-trust-unverifiable. `distinct-session` is a real independence signal (accent, like
+   badge-trust-full). `distinct-deployment` is the strongest grade the kernel computes (ok/green,
+   like badge-trust-signed). `unknown` (a defensive fallback for a NULL grade -- unreachable on any
+   review row in this deployment today) reads as inert/neutral, never mistaken for a passing grade. */
+.badge-discharge-same-principal { background: var(--danger); color: #fff; }
+.badge-discharge-same-session { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-text); }
+.badge-discharge-distinct-session { background: var(--open-bg); color: var(--accent); border: 1px solid var(--accent-dim); }
+.badge-discharge-distinct-deployment { background: var(--ok-bg); color: var(--ok-text); border: 1px solid var(--ok-text); }
+.badge-discharge-unknown { background: var(--open-bg); color: var(--text-dim); border: 1px dashed var(--border); }
+
 .witness-list {
   margin-top: 0.5rem;
   padding-left: 0.9rem;
