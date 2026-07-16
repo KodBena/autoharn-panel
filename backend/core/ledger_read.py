@@ -85,6 +85,14 @@ def rows(
         raise ValueError(f"unknown sort_by {sort_by!r}; must be one of {sorted(_SORT_COLUMNS)}")
     if sort_dir not in _SORT_DIRS:
         raise ValueError(f"unknown sort_dir {sort_dir!r}; must be one of {sorted(_SORT_DIRS)}")
+    # `limit`/`offset` feed straight into a LIMIT/OFFSET clause below -- Postgres itself rejects a
+    # negative value there with an unhandled 500 (caught live: GET /api/rows?limit=-5 -- cycle-3
+    # consult finding 2, CRITICAL), so both are validated here the same way sort_by/sort_dir are:
+    # raise ValueError, which the route layer turns into a 400 with a field-level message.
+    if limit < 1:
+        raise ValueError(f"limit must be >= 1, got {limit}")
+    if offset < 0:
+        raise ValueError(f"offset must be >= 0, got {offset}")
     where = ["1=1"] if include_superseded else [_CURRENT_FILTER]
     params: list[Any] = []
     if kind is not None:
