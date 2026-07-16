@@ -63,6 +63,19 @@ export interface LedgerChangeEvent {
   watermark: Watermark
 }
 
+// GET /api/backend-surface (backend/core/routes.py + backend/core/backend_surface.py) --
+// spa-backend-surface-view, commission row:741. `exposed_by_api` is LIVE-derived (a source-grep
+// over this backend's own core+enabled-extension .py files, re-run per request behind a short
+// TTL cache) -- never a hand-maintained mapping; see backend_surface.py's own header comment.
+export interface BackendSurfaceRelation {
+  schema: string
+  name: string
+  kind: 'table' | 'view' | 'materialized view' | string
+  count: number
+  count_estimated: boolean
+  exposed_by_api: boolean
+}
+
 // GET/POST/DELETE /api/profiles (backend/core/routes.py + backend/core/profiles_write.py).
 // GET is always mounted (read-only view); POST/DELETE are only mounted when the backend is
 // writable (`not cfg.read_only`) -- see Health.read_only.

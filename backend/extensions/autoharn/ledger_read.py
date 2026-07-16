@@ -20,11 +20,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
-import psycopg
-from psycopg.rows import dict_row
-
 from config import PanelConfig
-from db import connect, jsonable
+from db import connect, connect_unrestricted, jsonable
 from extensions.autoharn.disposition import WitnessFacts, derive_status, group_item_rows
 
 # CLAUDE.md point 11's disclosure prefix: every LAZY-mode commission's statement carries this
@@ -55,24 +52,18 @@ INDEPENDENCE_VALUES: tuple[str, ...] = ("self-review", "technical", "managerial"
 STATUS_VALUES: tuple[str, ...] = ("OPEN", "WITNESSED", "PARTIAL", "COSIGNED", "AMBIGUOUS")
 
 
-def _connect_unrestricted(cfg: PanelConfig) -> psycopg.Connection:
-    """A connection that deliberately does NOT `SET ROLE` -- used only for the `stamp_secret`
-    armed-check (that table is REVOKEd from the subject role on purpose; checking under `SET
-    ROLE` would always raise `permission denied`, not report False). Caller must close it."""
-    return psycopg.connect(cfg.connection.conninfo(), row_factory=dict_row, autocommit=True)
-
-
 def autoharn_health(cfg: PanelConfig) -> dict[str, Any]:
     """The autoharn-specific slice of `GET /api/health` (mixed into core's health payload by
-    `routes.py` only when this extension is enabled)."""
-    conn = _connect_unrestricted(cfg)
-    try:
-        with conn.cursor() as cur:
-            cur.execute(f'SET search_path = "{cfg.schema}", "{cfg.kern_schema}"')
-            cur.execute(f'SELECT EXISTS (SELECT 1 FROM "{cfg.kern_schema}".stamp_secret) AS armed')
-            armed = bool(cur.fetchone()["armed"])
-    finally:
-        conn.close()
+    `routes.py` only when this extension is enabled). Uses `db.connect_unrestricted` (does NOT
+    `SET ROLE`) for the `stamp_secret` armed-check -- that table is REVOKEd from the subject role
+    on purpose, so checking under the ordinary `SET ROLE`'d `db.connect` would always raise
+    `permission denied` rather than report False. (Previously a module-local
+    `_connect_unrestricted`/`psycopg.connect` call here; consolidated into `db.py`'s shared
+    helper once `core/backend_surface.py` needed the identical pattern for the same table --
+    spa-backend-surface-view, commission row:741.)"""
+    with connect_unrestricted(cfg) as conn, conn.cursor() as cur:
+        cur.execute(f'SELECT EXISTS (SELECT 1 FROM "{cfg.kern_schema}".stamp_secret) AS armed')
+        armed = bool(cur.fetchone()["armed"])
     return {
         "stamp_secret_armed": armed,
         "verdicts": list(VERDICTS),

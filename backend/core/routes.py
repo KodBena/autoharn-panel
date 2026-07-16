@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from core import ledger_read, profiles_write
+from core import backend_surface, ledger_read, profiles_write
 
 router = APIRouter()
 
@@ -86,6 +86,18 @@ def api_row(request: Request, row_id: int) -> dict[str, Any]:
 def api_watermark(request: Request) -> dict[str, Any]:
     cfg = request.app.state.panel.cfg
     return ledger_read.watermark(cfg)
+
+
+@router.get("/api/backend-surface")
+def api_backend_surface(request: Request) -> list[dict[str, Any]]:
+    """The deployment's actual DB surface (both configured schemas) cross-referenced against
+    what this backend's own source actually queries (spa-backend-surface-view, commission
+    row:741) -- CORE, mounted unconditionally (not autoharn-gated), since it depends only on
+    core-generic `PanelConfig` fields. See `core/backend_surface.py`'s own module docstring for
+    the two-gap framing and the safety contract (never a relation's row content, only
+    name/kind/count)."""
+    cfg = request.app.state.panel.cfg
+    return backend_surface.backend_surface(cfg)
 
 
 _SSE_HEARTBEAT_INTERVAL_S = 20

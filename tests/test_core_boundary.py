@@ -108,6 +108,22 @@ def test_bare_schema_core_reads_work_with_no_rows(bare_app) -> None:
         resp = client.get("/api/commissions")
         assert resp.status_code == 404
 
+        # spa-backend-surface-view (commission row:741): GET /api/backend-surface is CORE, so it
+        # must serve against this bare schema too -- just `ledger`(SCHEMA)+`principal`(KERN), no
+        # kernel views, no stamp_secret. Every relation's name/kind/count is real metadata (not
+        # hand-listed), and both known relations here are genuinely queried by core, so both must
+        # report exposed_by_api True.
+        surface = client.get("/api/backend-surface").json()
+        by_key = {(r["schema"], r["name"]): r for r in surface}
+        assert (SCHEMA, "ledger") in by_key
+        assert (KERN, "principal") in by_key
+        assert by_key[(SCHEMA, "ledger")]["kind"] == "table"
+        assert by_key[(SCHEMA, "ledger")]["count"] == 0
+        assert by_key[(SCHEMA, "ledger")]["exposed_by_api"] is True
+        assert by_key[(KERN, "principal")]["exposed_by_api"] is True
+        # nothing beyond these two relations exists in this bare schema
+        assert {s for s, _ in by_key} <= {SCHEMA, KERN}
+
 
 def test_bare_schema_core_reads_a_written_row(bare_app) -> None:
     author_id_r = psql(f"SELECT id FROM {KERN}.principal WHERE name='author';")

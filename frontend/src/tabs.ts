@@ -19,6 +19,7 @@
 import type { Component } from 'vue'
 import LedgerTab from './core/components/LedgerTab.vue'
 import ProfilesPanel from './core/components/ProfilesPanel.vue'
+import BackendSurfaceTab from './core/components/BackendSurfaceTab.vue'
 import CommissionTab from './extensions/autoharn/components/CommissionTab.vue'
 import WorkItemsTab from './extensions/autoharn/components/WorkItemsTab.vue'
 import ReviewGapTab from './extensions/autoharn/components/ReviewGapTab.vue'
@@ -43,6 +44,7 @@ export interface TabDef {
 export const TAB_DEFS = [
   { id: 'ledger', path: '/ledger', label: 'Recent ledger', component: LedgerTab, core: true },
   { id: 'profiles', path: '/profiles', label: 'Profiles', component: ProfilesPanel, core: true },
+  { id: 'backend-surface', path: '/backend-surface', label: 'Backend surface', component: BackendSurfaceTab, core: true },
   { id: 'commission', path: '/commissions', label: 'Commission decomposition', component: CommissionTab, core: false },
   { id: 'work', path: '/work-items', label: 'Work items', component: WorkItemsTab, core: false },
   { id: 'review-gap', path: '/review-gap', label: 'Review gap', component: ReviewGapTab, core: false },

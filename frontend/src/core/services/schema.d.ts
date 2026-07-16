@@ -78,6 +78,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/backend-surface": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Backend Surface
+         * @description The deployment's actual DB surface (both configured schemas) cross-referenced against
+         *     what this backend's own source actually queries (spa-backend-surface-view, commission
+         *     row:741) -- CORE, mounted unconditionally (not autoharn-gated), since it depends only on
+         *     core-generic `PanelConfig` fields. See `core/backend_surface.py`'s own module docstring for
+         *     the two-gap framing and the safety contract (never a relation's row content, only
+         *     name/kind/count).
+         */
+        get: operations["api_backend_surface_api_backend_surface_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events": {
         parameters: {
             query?: never;
@@ -468,6 +493,28 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    api_backend_surface_api_backend_surface_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
                 };
             };
         };
