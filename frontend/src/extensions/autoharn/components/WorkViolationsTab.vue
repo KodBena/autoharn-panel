@@ -29,6 +29,6 @@ const columns: Column[] = [
     :get-row-id="(r) => r.target_id as number"
     expand-on-fetch
     description="Every currently-unresolved decomposition-tree violation the kernel's own `work_item_violations` view reports (duplicate opens, dangling refs, cycles, a shipped close with no witness, ...) that has not already been disposed of via a work_violation_disposition row. Click a row's target row id to expand the ledger statement it names (fetched on demand)."
-    empty-text="No violations -- the decomposition tree currently has none unresolved."
+    empty-text="No violations -- the decomposition tree currently has none unresolved. Resolved historical dispositions, if any, are not hidden -- find them in Recent Ledger filtered to kind: work_violation_disposition."
   />
 </template>
