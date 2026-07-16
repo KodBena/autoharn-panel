@@ -191,6 +191,58 @@ RE-ARM" (lines 147–165); implementation in `_breaker_transition()` (lines
 
 ---
 
+## Finding 3 — a work item's close has no "no review needed" constructor, even for a close with zero judgment content
+
+**What happened.** s29 Element B (`kernel/lineage/s29-obligation-item-key-and-typed-close.sql`)
+requires every `led work close` to pick exactly one of two constructors —
+`--review-witness <ref>` (a review already exists) or `--review-deferred`
+(the close itself becomes a review obligation) — and refuses construction
+outright otherwise (`autoharn/bootstrap/templates/led.tmpl` lines 1415–1431:
+"`led work close: REFUSED -- a review-silent close is unrepresentable (s29
+Element B)`"). This is deliberate and, for substantive work, correct. But it
+has no exception for a close whose content is **pure ledger bookkeeping with
+no judgment call for anyone to countersign** — concretely, this deployment's
+own git-transaction-pairing work items (row:407's policy: a second work unit
+whose sole resolution is "the commit landed", e.g. `backflow-finding-rewrite-
+commit`, `cycle3-consult-doc-commit`). Closing either of these with `led work
+close <slug> shipped --witness commit:<hash>` and nothing else is refused
+identically to closing a genuine, judgment-bearing deliverable — there is no
+third constructor for "this close has nothing in it a reviewer could
+meaningfully attest to or refute."
+
+**Why it is surprising.** The two work items this finding cites exist
+*entirely because of the harness's own git-transaction policy* — a
+bookkeeping artifact, not a deliverable. Requiring the exact same review
+ceremony for "the commit landed, here is its hash" as for "this refactor is
+correct" either produces review-gap debt with no genuine content to review
+(the countersign can say nothing more than "yes, that hash exists"), or
+trains the operator to treat `--review-deferred` + a boilerplate self-review
+attestation as a rubber stamp — exactly the "content-free review" shape
+`USER-RECIPES-FAQ.md`'s own Review Discipline section already names as a
+known failure class, just reliably reproduced here rather than caught by
+`audit --review-gap`'s length heuristic (a boilerplate countersign is easily
+long enough to pass that heuristic while still being empty of judgment).
+
+**Concrete evidence.** Live, this session: both `led work close
+backflow-finding-rewrite-commit shipped --witness commit:df26309` and the
+same for `cycle3-consult-doc-commit` were refused with the identical
+`REFUSED -- a review-silent close is unrepresentable (s29 Element B)`
+message (`autoharn/bootstrap/templates/led.tmpl` line 1425), with no
+constructor available that says "this close is bookkeeping, not a
+deliverable."
+
+**Severity if cargo-culted at NRC/NIST-grade stakes.** Lower blast-radius than
+this file's other findings — the failure mode is ceremony-without-content
+rather than a false-clean or false-alarm signal — but worth naming because it
+sits exactly where Rule 3 of `law/adr/0013-execution-integrity.md` warns
+against: a mechanism whose review requirement cannot distinguish "worth
+reviewing" from "nothing to review" invites exactly the demurral this
+project is trying to keep out of its own culture (a bookkeeping close review
+becomes a rubber stamp, and the discipline that rubber stamp was supposed to
+protect gets a little weaker each time).
+
+---
+
 ## Verification note
 
 Every file path and line reference above was checked against the actual
