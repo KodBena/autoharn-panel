@@ -65,13 +65,25 @@ export interface CommissionDetail {
   trust_detail: string | null
 }
 
+// work_item_current (joined with `principal` for claimant_name, plus `blocked_by` merged in
+// from work_edge_blocks_close): extensions.autoharn.ledger_read.work_items, GET /api/work.
+// `effective_state`/`parent_slug`/`blocked_by` added by work-item-relations-api (commit
+// 0a0e869) -- this interface was left stale vs the wire until now (compliance-review finding
+// row:745 item 5, countersigned row:747). `effective_state` is the kernel's composite-discharge
+// derivation (Autoharn.idr s33): differs from raw `state` only for a fully-closed-via-children
+// parent (value `discharged-by-obligations`) whose own `state` column stays `open` by kernel
+// design. `blocked_by` is always an array (work_items() defaults it to `[]` via a dict .get
+// fallback in Python), never null/undefined.
 export interface WorkItemRow {
   slug: string
   title: string | null
   state: string | null
+  effective_state: string | null
   resolution: string | null
   witness: string | null
+  parent_slug: string | null
   claimant_name: string | null
+  blocked_by: string[]
 }
 
 // review_gap: the live kernel view this route selects from (kernel/lineage s15-schema.sql at

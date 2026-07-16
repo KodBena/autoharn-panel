@@ -33,8 +33,9 @@ import { api } from '../../../core/services/api-client'
 import type { Column } from '../../../core/components/DataTable.vue'
 import DataTable from '../../../core/components/DataTable.vue'
 import { useLiveUpdates } from '../../../core/composables/useLiveUpdates'
+import type { WorkItemRow } from '../services/types'
 
-const rows = ref<Record<string, unknown>[]>([])
+const rows = ref<WorkItemRow[]>([])
 const error = ref<string | null>(null)
 const { tick } = useLiveUpdates()
 
@@ -50,7 +51,7 @@ const sortDir = ref<'asc' | 'desc'>('asc')
 // reader seeing only `state` cannot tell "done via children" from "genuinely stalled" (consult
 // cycle-4 finding 1). Falls back to a generic `raw -> effective` note for any future
 // effective_state value this deployment doesn't special-case yet, rather than silently hiding it.
-function stateLabel(r: Record<string, unknown>): string {
+function stateLabel(r: WorkItemRow): string {
   const state = String(r.state ?? '')
   const effective = r.effective_state
   if (typeof effective === 'string' && effective && effective !== state) {
@@ -64,7 +65,7 @@ function stateLabel(r: Record<string, unknown>): string {
 // 5) -- a typed dependency edge, distinct from `parent_slug`'s parent/child edge. Only 2 live
 // edges in this deployment today, so a comma-joined plain label is proportionate; a dependency
 // graph view is out of scope for this item.
-function blockedByLabel(r: Record<string, unknown>): string {
+function blockedByLabel(r: WorkItemRow): string {
   const v = r.blocked_by
   if (!Array.isArray(v) || v.length === 0) return ''
   return v.join(', ')
@@ -137,7 +138,7 @@ async function load(): Promise<void> {
   try {
     const { data, error: err } = await api.GET('/api/work')
     if (err) throw err
-    rows.value = (data ?? []) as Record<string, unknown>[]
+    rows.value = (data ?? []) as unknown as WorkItemRow[]
     error.value = null
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
