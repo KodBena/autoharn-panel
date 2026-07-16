@@ -87,8 +87,35 @@ const supersededIds = computed(() => {
   return s
 })
 
+// cycle-2 consult finding 3 (row:437, rescoped by row:456): the unfiltered default view
+// measured 54,842px scrollHeight because long free-text `statement` values render in full, with
+// no truncation anywhere upstream. DataTable.vue/DataRow.vue carry an explicit no-elision
+// commitment shared by EVERY tab (see DataTable.vue's own header comment), so this cannot be
+// fixed by changing those shared files -- the fix has to live entirely in this tab: truncate the
+// `statement` VALUE itself before it is handed to DataTable, and use the row-click emit (already
+// wired by DataTable/DataRow but left unused by this tab until now) to toggle a per-row expanded
+// state. Nothing is permanently hidden -- every row's full text is one click away, and the
+// toggle is local prop/state, not a DataTable/DataRow behavior change.
+const STATEMENT_TRUNCATE_AT = 240
+const expandedIds = ref<Set<number>>(new Set())
+
+function toggleExpand(rowId: string | number): void {
+  const id = Number(rowId)
+  if (Number.isNaN(id)) return
+  if (expandedIds.value.has(id)) expandedIds.value.delete(id)
+  else expandedIds.value.add(id)
+}
+
+function displayStatement(r: Record<string, unknown>): string {
+  const text = typeof r.statement === 'string' ? r.statement : ''
+  if (text.length <= STATEMENT_TRUNCATE_AT) return text
+  const id = r.id as number
+  if (expandedIds.value.has(id)) return `${text}  [click row to collapse]`
+  return `${text.slice(0, STATEMENT_TRUNCATE_AT)}… [click row to expand -- ${text.length} chars total]`
+}
+
 const displayRows = computed(() =>
-  rows.value.map((r) => ({ ...r, ts_fmt: fmtTs(r.ts as string | null) })),
+  rows.value.map((r) => ({ ...r, ts_fmt: fmtTs(r.ts as string | null), statement: displayStatement(r) })),
 )
 
 async function loadKindOptions(): Promise<void> {
@@ -189,22 +216,28 @@ defineExpose({ reload: load })
       <label for="row-limit">limit:</label>
       <input id="row-limit" v-model.number="limit" type="number" min="1" style="width: 5.5rem" />
     </div>
+    <p class="muted" style="font-size: 0.8rem">
+      Long statements are truncated by default -- click a row to expand or collapse its full text.
+    </p>
     <div class="live-update-banner" role="status" aria-live="polite">
       <button v-if="updatesAvailable" type="button" class="live-update-banner__btn" @click="applyPendingUpdates">
         Updates available -- click to load
       </button>
     </div>
     <div v-if="error" class="error-banner">{{ error }}</div>
-    <DataTable
-      :columns="columns"
-      :rows="displayRows"
-      :row-key="(r) => r.id as number"
-      :superseded-ids="supersededIds"
-      :sort-by="sortBy"
-      :sort-dir="sortDir"
-      empty-text="No ledger rows match this filter."
-      @sort-change="onSortChange"
-    />
+    <div class="expandable-ledger-table">
+      <DataTable
+        :columns="columns"
+        :rows="displayRows"
+        :row-key="(r) => r.id as number"
+        :superseded-ids="supersededIds"
+        :sort-by="sortBy"
+        :sort-dir="sortDir"
+        empty-text="No ledger rows match this filter."
+        @sort-change="onSortChange"
+        @row-click="toggleExpand"
+      />
+    </div>
     <div class="commission-picker pagination-row">
       <button :disabled="!hasPrevPage" @click="goToPrevPage">Prev</button>
       <span class="muted">page {{ pageNumber }} (offset {{ offset }})</span>
@@ -212,3 +245,14 @@ defineExpose({ reload: load })
     </div>
   </section>
 </template>
+
+<style scoped>
+/* Local-only affordance for the truncate/expand toggle above -- a cursor hint that ledger rows
+   are clickable in THIS tab. Deep-scoped to reach DataRow.vue's own <tr>/.vg-row markup, but the
+   selector and rule live entirely in this file's own scoped style block; DataRow.vue's file and
+   its default (non-interactive) cursor for every other tab are untouched. */
+.expandable-ledger-table :deep(tr),
+.expandable-ledger-table :deep(.vg-row) {
+  cursor: pointer;
+}
+</style>
