@@ -1,0 +1,66 @@
+pool-hang-load-test -- one recorded REAL passing run (ledger row:940, acceptance criteria row:1057)
+=====================================================================================================
+Command: PGHOST=192.168.122.1 venv/bin/python3 -m pytest tests/test_pool_hang_load.py -v -s
+Date: 2026-07-16 (session de711baa-3069-4a10-baff-0d2955fb948a)
+Target: a dedicated uvicorn subprocess (backend/app.py, unmodified) on 127.0.0.1:8471, PANEL_READONLY=1,
+        against the real deployment Postgres (host 192.168.122.1, db toy, schema experience/experience_kernel,
+        role experience_rw) -- the same real, live infrastructure the shared dev instances on :8420/:18420 use.
+Working tree note: this run was taken after the concurrent autoharn-adapter-acl-wrap sibling agent's edits to
+        backend/app.py, backend/extensions/autoharn/{routes.py,cosign.py,ledger_adapter.py} reached an
+        importable intermediate state; this file (tests/test_pool_hang_load.py) and this recorded run do not
+        touch any of those files.
+=====================================================================================================
+
+============================= test session starts ==============================
+platform linux -- Python 3.13.13, pytest-9.1.1, pluggy-1.6.0 -- /home/bork/w/vdc/1/experience/autoharn-panel/venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/bork/w/vdc/1/experience/autoharn-panel
+plugins: anyio-4.14.2
+collecting ... collected 1 item
+
+tests/test_pool_hang_load.py::test_pool_hang_load
+=== pool-hang-load-test -- target=http://127.0.0.1:8471/api/backend-surface ===
+bounds: wall_time(n) <= reference_throughput * n * GROWTH_FACTOR(3.0), reference_throughput measured live from n=10; ABSOLUTE_MAX_SECONDS=120.0s per tier; zero failures required
+
+baseline (n=1, unloaded): 170.4ms
+
+--- concurrency=10 (<= 40-slot cap) ---
+  wall_time=0.903s  failures=0/10  throughput=90.3ms/req  (reference tier -- sets reference_throughput=90.3ms/req)
+  latency p50=760.9ms p95=898.7ms p99=898.7ms max=898.7ms
+  verdict: PASS
+
+--- concurrency=40 (<= 40-slot cap) ---
+  wall_time=3.693s  failures=0/40  throughput=92.3ms/req  (bound=10.841s, ratio-to-reference=1.02x)
+  latency p50=3278.0ms p95=3665.7ms p99=3670.0ms max=3670.0ms
+  verdict: PASS
+
+--- concurrency=80 (> 40-slot cap) ---
+  wall_time=7.277s  failures=0/80  throughput=91.0ms/req  (bound=21.682s, ratio-to-reference=1.01x)
+  latency p50=6991.0ms p95=7246.3ms p99=7250.3ms max=7257.1ms
+  verdict: PASS
+
+--- concurrency=150 (> 40-slot cap) ---
+  wall_time=13.413s  failures=0/150  throughput=89.4ms/req  (bound=40.655s, ratio-to-reference=0.99x)
+  latency p50=13238.0ms p95=13346.5ms p99=13361.4ms max=13363.5ms
+  verdict: PASS
+
+--- concurrency=250 (> 40-slot cap) ---
+  wall_time=22.219s  failures=0/250  throughput=88.9ms/req  (bound=67.758s, ratio-to-reference=0.98x)
+  latency p50=22115.7ms p95=22125.6ms p99=22128.6ms max=22130.0ms
+  verdict: PASS
+
+=== OVERALL: PASS ===
+PASSED
+
+============================== 1 passed in 48.49s ==============================
+
+=====================================================================================================
+Post-run teardown check: `ss -ltnp | grep :8471` and `ps aux | grep 8471` both showed nothing -- the
+dedicated subprocess was torn down cleanly by the module-scoped fixture, no orphaned process/port left.
+
+Summary: 530 total real HTTP requests fired across 5 concurrency tiers (10/40/80/150/250, the last three
+all exceeding both the 40-slot anyio CapacityLimiter and the connection pool's own max_size=41). Zero
+request failures at any tier. Per-request amortized throughput stayed in an 88.9-92.3ms band the entire
+way (ratio-to-reference 0.98x-1.02x across a 25x concurrency range) -- bounded, proportional (linear)
+growth, not the runaway/unbounded blowup the witnessed :8420 hang (row:894) would have produced under
+the OLD per-call-connect behavior. This is the positive end-to-end evidence row:940 asked for.
