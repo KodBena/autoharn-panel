@@ -1,0 +1,15 @@
+{
+  "jobs": [
+    {"id": "cosign-validation-tests", "duration": 1, "depends_on": []},
+    {"id": "ledger-ports-protocols", "duration": 1, "depends_on": []},
+    {"id": "db-connection-pool", "duration": 1, "depends_on": []},
+    {"id": "core-ledger-adapter", "duration": 1, "depends_on": ["ledger-ports-protocols"], "resources": ["app.py"]},
+    {"id": "autoharn-adapter-acl-wrap", "duration": 1, "depends_on": ["ledger-ports-protocols"], "resources": ["app.py"]},
+    {"id": "autoharn-god-module-split", "duration": 1, "depends_on": ["autoharn-adapter-acl-wrap"]},
+    {"id": "core-ledger-fake", "duration": 1, "depends_on": ["ledger-ports-protocols"]},
+    {"id": "autoharn-ledger-fake", "duration": 1, "depends_on": ["ledger-ports-protocols"]},
+    {"id": "core-coverage-tests", "duration": 1, "depends_on": ["ledger-ports-protocols", "core-ledger-adapter", "core-ledger-fake"]},
+    {"id": "autoharn-coverage-tests", "duration": 1, "depends_on": ["ledger-ports-protocols", "autoharn-adapter-acl-wrap", "autoharn-ledger-fake"]},
+    {"id": "pool-hang-load-test", "duration": 1, "depends_on": ["db-connection-pool"]}
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "makespan": 4,
+  "optimal": true,
+  "jobs": [
+    {
+      "id": "cosign-validation-tests",
+      "start": 0,
+      "end": 1
+    },
+    {
+      "id": "ledger-ports-protocols",
+      "start": 0,
+      "end": 1
+    },
+    {
+      "id": "db-connection-pool",
+      "start": 0,
+      "end": 1
+    },
+    {
+      "id": "core-ledger-adapter",
+      "start": 1,
+      "end": 2
+    },
+    {
+      "id": "autoharn-adapter-acl-wrap",
+      "start": 2,
+      "end": 3
+    },
+    {
+      "id": "autoharn-god-module-split",
+      "start": 3,
+      "end": 4
+    },
+    {
+      "id": "core-ledger-fake",
+      "start": 1,
+      "end": 2
+    },
+    {
+      "id": "autoharn-ledger-fake",
+      "start": 1,
+      "end": 2
+    },
+    {
+      "id": "core-coverage-tests",
+      "start": 3,
+      "end": 4
+    },
+    {
+      "id": "autoharn-coverage-tests",
+      "start": 3,
+      "end": 4
+    },
+    {
+      "id": "pool-hang-load-test",
+      "start": 2,
+      "end": 3
+    }
+  ],
+  "batches": [
+    [
+      "cosign-validation-tests",
+      "ledger-ports-protocols",
+      "db-connection-pool"
+    ],
+    [
+      "core-ledger-adapter",
+      "core-ledger-fake",
+      "autoharn-ledger-fake"
+    ],
+    [
+      "autoharn-adapter-acl-wrap",
+      "pool-hang-load-test"
+    ],
+    [
+      "autoharn-god-module-split",
+      "core-coverage-tests",
+      "autoharn-coverage-tests"
+    ]
+  ]
+}
