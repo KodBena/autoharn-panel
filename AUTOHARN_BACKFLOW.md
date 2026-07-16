@@ -363,6 +363,23 @@ mechanically, not by my own remembered discipline." Either branch of this — a 
 mechanism, or documenting the existing one as a recipe once its subagent-coverage is confirmed —
 would close a gap that has now cost real, repeated, self-disclosed incidents.
 
+**Addendum — a manually-harvested signal, in lieu of pgAudit.** The maintainer's own framing,
+offered directly during this investigation: an orchestrating session reaching for raw SQL instead
+of an exposed verb is itself diagnostic signal for autoharn's own evolution — exactly the pattern
+`design/ORCH-PGAUDIT-EXPLORATION.md` names pgAudit as existing to harvest for feature escalation,
+currently disabled for executive-bandwidth reasons on the maintainer's side. With it off, that
+signal is otherwise lost, so recording it by hand here once: this session's own raw-SQL usage
+surfaced exactly one capability gap not already covered by this file's Finding 1 (the
+`effective_state`/composite-discharge display gap) — **no CLI verb exists to check whether
+`decomposition_review` is actually armed for a given world.** Confirming this took two raw queries
+this session had no `led` equivalent for: `SELECT count(*) FROM countersign_obligation` (is the
+review-obligation regime adopted at all) and reading `.claude/apparatus.json`'s
+`mechanisms.decomposition_review.mode` directly (is it `observe` or `enforce`). A `led
+decomposition-review-status` (or similarly-named) verb answering "is this world's decomposition
+gate actually armed, and in what mode" in one call — rather than an operator having to know to
+check two separate places by hand, as this investigation did — would be a small, concrete,
+directly-actionable companion to the dispatch-time-enforcement suggestion above.
+
 ---
 
 ## Verification note
